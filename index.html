@@ -1,0 +1,108 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>HandConnect | Real-Time Hand Tracking</title>
+
+    <link rel="stylesheet" href="css/style.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js"></script>
+</head>
+
+<body>
+
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-icon">✦</span>
+            <div>
+                <h1>HandConnect</h1>
+                <p>REAL-TIME HAND TRACKING</p>
+            </div>
+        </div>
+
+        <div class="status">
+            <span id="statusDot" class="status-dot"></span>
+            <span id="statusText">Camera Offline</span>
+        </div>
+    </header>
+
+    <main class="workspace">
+
+        <section class="camera-section">
+
+            <video id="video" playsinline muted></video>
+            <canvas id="canvas"></canvas>
+
+            <div id="message" class="message">
+                <div class="camera-symbol">◎</div>
+                <h2>Ready to connect?</h2>
+                <p>Start your camera to begin real-time hand tracking.</p>
+            </div>
+
+            <div class="camera-label">LIVE CAMERA FEED</div>
+
+            <div class="camera-controls">
+                <button id="startBtn" class="primary-btn">
+                    Start Camera
+                </button>
+
+                <button id="stopBtn" class="secondary-btn" disabled>
+                    Stop Camera
+                </button>
+            </div>
+
+        </section>
+
+        <aside class="dashboard">
+
+            <div class="panel-heading">
+                <h2>Tracking Dashboard</h2>
+                <p>Live detection statistics</p>
+            </div>
+
+            <div class="stat-card">
+                <span>Hands Detected</span>
+                <strong id="handCount">0</strong>
+            </div>
+
+            <div class="stat-card">
+                <span>Performance</span>
+                <strong id="fps">0 <small>FPS</small></strong>
+            </div>
+
+            <div class="stat-card">
+                <span>Detected Gesture</span>
+                <strong id="gesture">-</strong>
+            </div>
+
+            <div class="stat-card">
+                <span>Finger Spread</span>
+                <strong id="spread">0%</strong>
+            </div>
+
+            <div class="info-card">
+                <h3>How to use</h3>
+                <p>01. Start your camera.</p>
+                <p>02. Show your palm.</p>
+                <p>03. Move both hands.</p>
+                <p>04. Try different gestures.</p>
+            </div>
+
+        </aside>
+
+    </main>
+
+    <footer>
+        <p>HandConnect · Computer Vision · Powered by MediaPipe</p>
+    </footer>
+
+    <script src="js/gestures.js"></script>
+    <script src="js/hand-tracking.js"></script>
+    <script src="js/app.js"></script>
+
+</body>
+</html>
