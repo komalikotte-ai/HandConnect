@@ -1,7 +1,16 @@
 
 const video = document.getElementById("video");
+
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
+
+const drawingCanvas = document.getElementById("drawingCanvas");
+const drawingCtx = drawingCanvas.getContext("2d");
+
+const brushColorInput = document.getElementById("brushColor");
+const brushSizeInput = document.getElementById("brushSize");
+const brushSizeValue = document.getElementById("brushSizeValue");
+const clearDrawingBtn = document.getElementById("clearDrawing");
 
 const TIPS = [4, 8, 12, 16, 20];
 
@@ -15,6 +24,7 @@ const BONES = [
 ];
 
 const HAND_COLORS = ["#ff4fd8", "#ffe83a"];
+
 const BEAM_COLORS = [
     "#ff3b3b", "#ff9a2e", "#7dff5a",
     "#3ad7ff", "#c46bff"
@@ -23,18 +33,64 @@ const BEAM_COLORS = [
 let camera = null;
 let tracker = null;
 let sparks = [];
+
 let last = performance.now();
 let fpsSmooth = 0;
 let isRunning = false;
 
+// Air drawing settings
+let brushColor = brushColorInput.value;
+let brushSize = Number(brushSizeInput.value);
+
+let previousDrawPoint = null;
+let smoothedDrawPoint = null;
+
+// Drawing improvement settings
+const SMOOTHING = 0.45;
+const MAX_JUMP_DISTANCE = 100;
+
+// Preserve drawing when browser window is resized
 function resizeCanvas() {
-    canvas.width = canvas.clientWidth;
-    canvas.height = canvas.clientHeight;
+    const oldWidth = drawingCanvas.width;
+    const oldHeight = drawingCanvas.height;
+
+    let savedDrawing = null;
+
+    if (oldWidth > 0 && oldHeight > 0) {
+        savedDrawing = document.createElement("canvas");
+        savedDrawing.width = oldWidth;
+        savedDrawing.height = oldHeight;
+
+        savedDrawing.getContext("2d").drawImage(
+            drawingCanvas, 0, 0
+        );
+    }
+
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+
+    canvas.width = width;
+    canvas.height = height;
+
+    drawingCanvas.width = width;
+    drawingCanvas.height = height;
+
+    if (savedDrawing) {
+        drawingCtx.drawImage(
+            savedDrawing,
+            0, 0, oldWidth, oldHeight,
+            0, 0, width, height
+        );
+    }
+
+    previousDrawPoint = null;
+    smoothedDrawPoint = null;
 }
 
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
 
+// Convert MediaPipe coordinates into canvas coordinates
 function toPx(p) {
     const vw = video.videoWidth || 1280;
     const vh = video.videoHeight || 720;
@@ -50,6 +106,25 @@ function toPx(p) {
     };
 }
 
+// Smooth fingertip movement
+function smoothPoint(currentPoint) {
+    if (!smoothedDrawPoint) {
+        smoothedDrawPoint = { ...currentPoint };
+        return smoothedDrawPoint;
+    }
+
+    smoothedDrawPoint = {
+        x: smoothedDrawPoint.x +
+            (currentPoint.x - smoothedDrawPoint.x) * SMOOTHING,
+
+        y: smoothedDrawPoint.y +
+            (currentPoint.y - smoothedDrawPoint.y) * SMOOTHING
+    };
+
+    return smoothedDrawPoint;
+}
+
+// Neon hand skeleton
 function glowLine(a, b, color, width) {
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
@@ -67,6 +142,7 @@ function glowLine(a, b, color, width) {
     ctx.stroke();
 }
 
+// Spark effects
 function addSpark(p, color) {
     sparks.push({
         x: p.x,
@@ -98,6 +174,115 @@ function drawSparks() {
     ctx.globalAlpha = 1;
 }
 
+// Show a visible cursor at the index fingertip
+function drawDrawingCursor(point) {
+    ctx.save();
+
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 10, 0, Math.PI * 2);
+    ctx.strokeStyle = brushColor;
+    ctx.lineWidth = 3;
+    ctx.shadowColor = brushColor;
+    ctx.shadowBlur = 15;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+
+    ctx.restore();
+}
+
+// Air drawing using the index fingertip
+function drawInAir(landmarks) {
+    const gesture = detectGesture(landmarks);
+
+    // Stop drawing when the Point gesture is released
+    // Drawing is controlled independently of the dashboard gesture label.
+if (!isIndexFingerPointing(landmarks)) {
+    previousDrawPoint = null;
+    smoothedDrawPoint = null;
+    return null;
+}
+
+    // Landmark 8 is the index fingertip
+    const rawPoint = toPx(landmarks[8]);
+
+    // Smooth small tracking movements
+    const currentPoint = smoothPoint(rawPoint);
+
+    // Prevent sudden tracking jumps from creating long lines
+    if (previousDrawPoint) {
+        const distance = Math.hypot(
+            currentPoint.x - previousDrawPoint.x,
+            currentPoint.y - previousDrawPoint.y
+        );
+
+        if (distance > MAX_JUMP_DISTANCE) {
+            previousDrawPoint = currentPoint;
+            return currentPoint;
+        }
+    }
+
+    drawingCtx.lineCap = "round";
+    drawingCtx.lineJoin = "round";
+    drawingCtx.strokeStyle = brushColor;
+    drawingCtx.lineWidth = brushSize;
+
+    if (previousDrawPoint) {
+        const middlePoint = {
+            x: (previousDrawPoint.x + currentPoint.x) / 2,
+            y: (previousDrawPoint.y + currentPoint.y) / 2
+        };
+
+        // Quadratic curves make strokes look smoother
+        drawingCtx.beginPath();
+
+        drawingCtx.moveTo(
+            previousDrawPoint.x,
+            previousDrawPoint.y
+        );
+
+        drawingCtx.quadraticCurveTo(
+            previousDrawPoint.x,
+            previousDrawPoint.y,
+            middlePoint.x,
+            middlePoint.y
+        );
+
+        drawingCtx.stroke();
+    }
+
+    previousDrawPoint = currentPoint;
+
+    return currentPoint;
+}
+
+// Brush color control
+brushColorInput.addEventListener("input", () => {
+    brushColor = brushColorInput.value;
+});
+
+// Brush size control
+brushSizeInput.addEventListener("input", () => {
+    brushSize = Number(brushSizeInput.value);
+    brushSizeValue.textContent = brushSize + "px";
+});
+
+// Clear drawing button
+clearDrawingBtn.addEventListener("click", () => {
+    drawingCtx.clearRect(
+        0, 0,
+        drawingCanvas.width,
+        drawingCanvas.height
+    );
+
+    previousDrawPoint = null;
+    smoothedDrawPoint = null;
+});
+
+// Dashboard updates
 function updateDashboard(res, count) {
     const now = performance.now();
 
@@ -107,6 +292,7 @@ function updateDashboard(res, count) {
     last = now;
 
     document.getElementById("handCount").textContent = count;
+
     document.getElementById("fps").innerHTML =
         `${Math.round(fpsSmooth)} <small>FPS</small>`;
 
@@ -130,21 +316,30 @@ function updateDashboard(res, count) {
         spread + "%";
 }
 
+// Process each MediaPipe result
 function onResults(res) {
     if (!isRunning) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.lineCap = "round";
 
-    const hands = (res.multiHandLandmarks || [])
-        .map(lm => lm.map(toPx));
+    const rawHands = res.multiHandLandmarks || [];
 
+    const hands = rawHands.map(lm => lm.map(toPx));
+
+    // Draw neon skeleton
     hands.forEach((points, h) => {
         for (const [a, b] of BONES) {
-            glowLine(points[a], points[b], HAND_COLORS[h % 2], 4);
+            glowLine(
+                points[a],
+                points[b],
+                HAND_COLORS[h % 2],
+                4
+            );
         }
     });
 
+    // Draw between two hands
     if (hands.length === 2) {
         TIPS.forEach((tip, i) => {
             glowLine(
@@ -161,10 +356,23 @@ function onResults(res) {
         });
     }
 
+    // Air drawing uses the first detected hand
+    if (rawHands.length > 0) {
+        const cursorPoint = drawInAir(rawHands[0]);
+
+        if (cursorPoint) {
+            drawDrawingCursor(cursorPoint);
+        }
+    } else {
+        previousDrawPoint = null;
+        smoothedDrawPoint = null;
+    }
+
     drawSparks();
     updateDashboard(res, hands.length);
 }
 
+// Start camera and hand tracking
 async function startTracking() {
     if (isRunning) return;
 
@@ -200,18 +408,24 @@ async function startTracking() {
         video.style.display = "block";
         document.getElementById("message").style.display = "none";
 
+        previousDrawPoint = null;
+        smoothedDrawPoint = null;
+
         return true;
 
     } catch (error) {
         console.error("Camera error:", error);
-        isRunning = false;
         await stopTracking();
         throw error;
     }
 }
 
+// Stop camera and tracking
 async function stopTracking() {
     isRunning = false;
+
+    previousDrawPoint = null;
+    smoothedDrawPoint = null;
 
     if (camera) {
         camera.stop();
@@ -224,8 +438,9 @@ async function stopTracking() {
     }
 
     if (tracker) {
-        await tracker.close();
+        const oldTracker = tracker;
         tracker = null;
+        await oldTracker.close();
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);

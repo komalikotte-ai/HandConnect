@@ -6,6 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>HandConnect | Real-Time Hand Tracking</title>
+    <meta name="description" content="An interactive real-time hand tracking and air drawing application powered by MediaPipe.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <link rel="stylesheet" href="css/style.css">
 
@@ -17,87 +22,219 @@
 
     <header class="topbar">
         <div class="brand">
-            <span class="brand-icon">✦</span>
-            <div>
+            <div class="brand-icon">H</div>
+            <div class="brand-text">
                 <h1>HandConnect</h1>
-                <p>REAL-TIME HAND TRACKING</p>
+                <p>COMPUTER VISION WORKSPACE</p>
             </div>
         </div>
 
-        <div class="status">
-            <span id="statusDot" class="status-dot"></span>
-            <span id="statusText">Camera Offline</span>
+        <div class="header-right">
+            <span class="product-label">LIVE HAND TRACKING</span>
+            <div class="status">
+                <span id="statusDot" class="status-dot"></span>
+                <span id="statusText">Camera Offline</span>
+            </div>
         </div>
     </header>
 
     <main class="workspace">
 
-        <section class="camera-section">
+        <section class="main-content">
 
-            <video id="video" playsinline muted></video>
-            <canvas id="canvas"></canvas>
-
-            <div id="message" class="message">
-                <div class="camera-symbol">◎</div>
-                <h2>Ready to connect?</h2>
-                <p>Start your camera to begin real-time hand tracking.</p>
+            <div class="page-heading">
+                <div>
+                    <span class="eyebrow">INTERACTIVE WORKSPACE</span>
+                    <h2>Hand Tracking Studio</h2>
+                    <p>Control your digital canvas using natural hand movements.</p>
+                </div>
+                <span class="powered-label">Powered by MediaPipe</span>
             </div>
 
-            <div class="camera-label">LIVE CAMERA FEED</div>
+            <section class="camera-section">
 
-            <div class="camera-controls">
-                <button id="startBtn" class="primary-btn">
-                    Start Camera
-                </button>
+                <div class="camera-header">
+                    <div>
+                        <h3>Camera Preview</h3>
+                        <p>Your live hand tracking workspace</p>
+                    </div>
+                    <span class="live-indicator">
+                        <span></span> LIVE PREVIEW
+                    </span>
+                </div>
 
-                <button id="stopBtn" class="secondary-btn" disabled>
-                    Stop Camera
-                </button>
-            </div>
+                <div class="camera-stage">
+
+                    <video id="video" playsinline muted></video>
+
+                    <canvas id="drawingCanvas"></canvas>
+                    <canvas id="canvas"></canvas>
+
+                    <div id="message" class="message">
+                        <div class="camera-symbol">
+                            <span>◎</span>
+                        </div>
+                        <h2>Ready to get started?</h2>
+                        <p>Start your camera to begin tracking your hand movements.</p>
+                    </div>
+
+                    <div class="camera-label">
+                        <span class="camera-label-dot"></span>
+                        CAMERA FEED
+                    </div>
+
+                </div>
+
+                <div class="drawing-panel">
+                    <div class="drawing-panel-heading">
+                        <div>
+                            <h3>Drawing Controls</h3>
+                            <p>Customize your air drawing brush</p>
+                        </div>
+                        <span class="tool-icon">✎</span>
+                    </div>
+
+                    <div class="drawing-tools">
+
+                        <div class="control-group color-control">
+                            <label for="brushColor">Brush color</label>
+                            <input type="color" id="brushColor" value="#2563eb">
+                        </div>
+
+                        <div class="control-group size-control">
+                            <label for="brushSize">
+                                Brush size
+                                <span id="brushSizeValue">6px</span>
+                            </label>
+                            <input type="range" id="brushSize" min="2" max="24" value="6">
+                        </div>
+
+                        <button id="clearDrawing" class="clear-btn">
+                            <span>⌫</span> Clear Canvas
+                        </button>
+
+                    </div>
+                </div>
+
+                <div class="camera-actions">
+                    <div class="action-description">
+                        <span class="action-icon">ⓘ</span>
+                        <span>Allow camera access when prompted.</span>
+                    </div>
+
+                    <div class="action-buttons">
+                        <button id="startBtn" class="primary-btn">
+                            <span>▶</span> Start Camera
+                        </button>
+
+                        <button id="stopBtn" class="secondary-btn" disabled>
+                            Stop Camera
+                        </button>
+                    </div>
+                </div>
+
+            </section>
 
         </section>
 
         <aside class="dashboard">
 
-            <div class="panel-heading">
-                <h2>Tracking Dashboard</h2>
-                <p>Live detection statistics</p>
+            <div class="dashboard-heading">
+                <span class="eyebrow">ANALYTICS</span>
+                <h2>Tracking Overview</h2>
+                <p>Real-time detection statistics</p>
             </div>
 
-            <div class="stat-card">
-                <span>Hands Detected</span>
-                <strong id="handCount">0</strong>
+            <div class="stats-grid">
+
+                <div class="stat-card">
+                    <div class="stat-top">
+                        <span class="stat-label">Hands Detected</span>
+                        <span class="stat-icon blue-icon">◎</span>
+                    </div>
+                    <strong id="handCount">0</strong>
+                    <span class="stat-caption">Currently in frame</span>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-top">
+                        <span class="stat-label">Performance</span>
+                        <span class="stat-icon green-icon">↗</span>
+                    </div>
+                    <strong id="fps">0 <small>FPS</small></strong>
+                    <span class="stat-caption">Tracking frame rate</span>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-top">
+                        <span class="stat-label">Detected Gesture</span>
+                        <span class="stat-icon purple-icon">✋</span>
+                    </div>
+                    <strong id="gesture" class="gesture-value">-</strong>
+                    <span class="stat-caption">Recognized hand pose</span>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-top">
+                        <span class="stat-label">Finger Spread</span>
+                        <span class="stat-icon orange-icon">↔</span>
+                    </div>
+                    <strong id="spread">0%</strong>
+                    <span class="stat-caption">Finger distance indicator</span>
+                </div>
+
             </div>
 
-            <div class="stat-card">
-                <span>Performance</span>
-                <strong id="fps">0 <small>FPS</small></strong>
+            <div class="guide-card">
+                <div class="guide-heading">
+                    <span class="guide-icon">✦</span>
+                    <div>
+                        <h3>Quick Guide</h3>
+                        <p>How to use HandConnect</p>
+                    </div>
+                </div>
+
+                <ol class="guide-list">
+                    <li>
+                        <span>01</span>
+                        <p>Start your camera and show your hand.</p>
+                    </li>
+                    <li>
+                        <span>02</span>
+                        <p>Raise your index finger to activate drawing.</p>
+                    </li>
+                    <li>
+                        <span>03</span>
+                        <p>Move your finger to draw on the canvas.</p>
+                    </li>
+                    <li>
+                        <span>04</span>
+                        <p>Fold your index finger to stop drawing.</p>
+                    </li>
+                    <li>
+                        <span>05</span>
+                        <p>Customize your brush and clear your canvas.</p>
+                    </li>
+                </ol>
             </div>
 
-            <div class="stat-card">
-                <span>Detected Gesture</span>
-                <strong id="gesture">-</strong>
-            </div>
-
-            <div class="stat-card">
-                <span>Finger Spread</span>
-                <strong id="spread">0%</strong>
-            </div>
-
-            <div class="info-card">
-                <h3>How to use</h3>
-                <p>01. Start your camera.</p>
-                <p>02. Show your palm.</p>
-                <p>03. Move both hands.</p>
-                <p>04. Try different gestures.</p>
+            <div class="technology-card">
+                <span class="technology-label">TECHNOLOGY</span>
+                <div class="technology-tags">
+                    <span>MediaPipe</span>
+                    <span>JavaScript</span>
+                    <span>Canvas API</span>
+                    <span>Computer Vision</span>
+                </div>
             </div>
 
         </aside>
 
     </main>
 
-    <footer>
-        <p>HandConnect · Computer Vision · Powered by MediaPipe</p>
+    <footer class="footer">
+        <p>© 2026 HandConnect</p>
+        <p>Real-Time Hand Tracking & Air Drawing</p>
     </footer>
 
     <script src="js/gestures.js"></script>
