@@ -27,29 +27,45 @@ let lastFrameTime = performance.now();
 // --------------------------------------------------
 
 function resizeCanvas() {
-    const width = video.clientWidth || 640;
-    const height = video.clientHeight || 480;
+    const width =
+        video.clientWidth ||
+        canvas.clientWidth ||
+        640;
+
+    const height =
+        video.clientHeight ||
+        canvas.clientHeight ||
+        480;
 
     const oldWidth = drawingCanvas.width;
     const oldHeight = drawingCanvas.height;
 
-    const image = document.createElement("canvas");
-    image.width = oldWidth;
-    image.height = oldHeight;
+    // Preserve the existing drawing.
+    let savedDrawing = null;
 
-    if (oldWidth && oldHeight) {
-        image.getContext("2d").drawImage(drawingCanvas, 0, 0);
+    if (oldWidth > 0 && oldHeight > 0) {
+        savedDrawing = document.createElement("canvas");
+        savedDrawing.width = oldWidth;
+        savedDrawing.height = oldHeight;
+
+        savedDrawing.getContext("2d").drawImage(
+            drawingCanvas,
+            0,
+            0
+        );
     }
 
+    // Resize both tracking and drawing canvases.
     canvas.width = width;
     canvas.height = height;
 
     drawingCanvas.width = width;
     drawingCanvas.height = height;
 
-    if (oldWidth && oldHeight) {
+    // Restore the previous drawing.
+    if (savedDrawing) {
         drawingCtx.drawImage(
-            image,
+            savedDrawing,
             0,
             0,
             oldWidth,
@@ -60,6 +76,10 @@ function resizeCanvas() {
             height
         );
     }
+
+    // Never connect a new stroke to an old coordinate.
+    previousDrawPoint = null;
+    smoothedPoint = null;
 }
 
 window.addEventListener("resize", resizeCanvas);
@@ -81,8 +101,8 @@ function toPx(point) {
 
 function smoothPoint(point) {
     if (!smoothedPoint) {
-        smoothedPoint = point;
-        return point;
+        smoothedPoint = { ...point };
+        return { ...smoothedPoint };
     }
 
     const distance = Math.hypot(
@@ -90,9 +110,10 @@ function smoothPoint(point) {
         point.y - smoothedPoint.y
     );
 
+    // Ignore sudden tracking jumps.
     if (distance > MAX_JUMP_DISTANCE) {
-        smoothedPoint = point;
-        return point;
+        smoothedPoint = { ...point };
+        return { ...smoothedPoint };
     }
 
     smoothedPoint = {
@@ -103,7 +124,9 @@ function smoothPoint(point) {
             (point.y - smoothedPoint.y) * SMOOTHING
     };
 
-    return smoothedPoint;
+    // Return a copy so previousDrawPoint cannot be
+    // accidentally modified by the next smoothing update.
+    return { ...smoothedPoint };
 }
 
 // --------------------------------------------------
@@ -120,6 +143,8 @@ const BONES = [
 ];
 
 function drawHandSkeleton(landmarks) {
+    ctx.save();
+
     ctx.lineWidth = 3;
     ctx.strokeStyle = "#00e5ff";
     ctx.fillStyle = "#ffffff";
@@ -141,6 +166,8 @@ function drawHandSkeleton(landmarks) {
         ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
         ctx.fill();
     });
+
+    ctx.restore();
 }
 
 // --------------------------------------------------
@@ -203,15 +230,36 @@ function drawInAir(landmarks, canDraw) {
     const indexTip = toPx(landmarks[8]);
     const currentPoint = smoothPoint(indexTip);
 
+    drawingCtx.save();
+
     drawingCtx.strokeStyle = brushColor.value;
     drawingCtx.lineWidth = Number(brushSize.value);
     drawingCtx.lineCap = "round";
     drawingCtx.lineJoin = "round";
 
     if (!previousDrawPoint) {
-        previousDrawPoint = currentPoint;
+        previousDrawPoint = { ...currentPoint };
+        drawingCtx.restore();
         return;
     }
+
+    const distance = Math.hypot(
+        currentPoint.x - previousDrawPoint.x,
+        currentPoint.y - previousDrawPoint.y
+    );
+
+    // Avoid drawing long unwanted lines.
+    if (distance > MAX_JUMP_DISTANCE) {
+        previousDrawPoint = { ...currentPoint };
+        drawingCtx.restore();
+        return;
+    }
+
+    const middleX =
+        (previousDrawPoint.x + currentPoint.x) / 2;
+
+    const middleY =
+        (previousDrawPoint.y + currentPoint.y) / 2;
 
     drawingCtx.beginPath();
 
@@ -219,12 +267,6 @@ function drawInAir(landmarks, canDraw) {
         previousDrawPoint.x,
         previousDrawPoint.y
     );
-
-    const middleX =
-        (previousDrawPoint.x + currentPoint.x) / 2;
-
-    const middleY =
-        (previousDrawPoint.y + currentPoint.y) / 2;
 
     drawingCtx.quadraticCurveTo(
         previousDrawPoint.x,
@@ -235,7 +277,9 @@ function drawInAir(landmarks, canDraw) {
 
     drawingCtx.stroke();
 
-    previousDrawPoint = currentPoint;
+    previousDrawPoint = { ...currentPoint };
+
+    drawingCtx.restore();
 }
 
 // --------------------------------------------------
@@ -266,7 +310,9 @@ function updateDashboard(res, count, gestureLabel) {
     const now = performance.now();
 
     const delta = now - lastFrameTime;
-    const fps = delta > 0 ? Math.round(1000 / delta) : 0;
+    const fps = delta > 0
+        ? Math.round(1000 / delta)
+        : 0;
 
     lastFrameTime = now;
 
@@ -289,14 +335,17 @@ function updateDashboard(res, count, gestureLabel) {
     if (count > 0 && res.multiHandLandmarks?.[0]) {
         const lm = res.multiHandLandmarks[0];
 
-        const wrist = lm[0];
-        const indexTip = lm[8];
+        const thumbTip = lm[4];
+        const pinkyTip = lm[20];
 
-        const spread = Math.round(
-            Math.hypot(
-                indexTip.x - wrist.x,
-                indexTip.y - wrist.y
-            ) * 100
+        const spread = Math.min(
+            100,
+            Math.round(
+                Math.hypot(
+                    thumbTip.x - pinkyTip.x,
+                    thumbTip.y - pinkyTip.y
+                ) * 250
+            )
         );
 
         spreadElement.textContent = spread + "%";
@@ -310,7 +359,12 @@ function updateDashboard(res, count, gestureLabel) {
 // --------------------------------------------------
 
 function onResults(res) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
 
     const rawHands = res.multiHandLandmarks || [];
 
@@ -363,9 +417,9 @@ async function startTracking() {
         resizeCanvas();
 
         hands = new Hands({
-    locateFile: file =>
-        `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
-});
+            locateFile: file =>
+                `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+        });
 
         hands.setOptions({
             maxNumHands: 2,
@@ -392,6 +446,11 @@ async function startTracking() {
 
         await camera.start();
 
+        // Resize again after camera initialization.
+        resizeCanvas();
+
+        return true;
+
     } catch (error) {
         console.error("Hand tracking error:", error);
 
@@ -409,22 +468,22 @@ async function stopTracking() {
     isTracking = false;
 
     if (camera) {
-    try {
-        camera.stop();
-    } catch (error) {
-        console.error("Camera stop error:", error);
+        try {
+            camera.stop();
+        } catch (error) {
+            console.error("Camera stop error:", error);
+        }
+
+        camera = null;
     }
 
-    camera = null;
-}
+    if (video.srcObject) {
+        video.srcObject.getTracks().forEach(track => {
+            track.stop();
+        });
 
-if (video.srcObject) {
-    video.srcObject.getTracks().forEach(track => {
-        track.stop();
-    });
-
-    video.srcObject = null;
-}
+        video.srcObject = null;
+    }
 
     if (hands) {
         try {
@@ -436,9 +495,12 @@ if (video.srcObject) {
         hands = null;
     }
 
-    video.srcObject = null;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
 
     previousDrawPoint = null;
     smoothedPoint = null;
@@ -449,4 +511,6 @@ if (video.srcObject) {
     document.getElementById("fps").textContent = "0";
     document.getElementById("gesture").textContent = "-";
     document.getElementById("spread").textContent = "-";
+
+    lastFrameTime = performance.now();
 }
