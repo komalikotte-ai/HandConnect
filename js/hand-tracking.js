@@ -1,4 +1,3 @@
-
 "use strict";
 
 // ==========================================
@@ -57,6 +56,129 @@ let currentStrokeSnapshot = null;
 let currentStrokeHasDrawn = false;
 
 let shapeStartPoint = null;
+
+// ==========================================
+// DRAWING AUTOSAVE AND RECOVERY
+// ==========================================
+
+let isRestoringDrawing = false;
+
+function saveCurrentDrawing() {
+    if (isRestoringDrawing || !window.DrawingStorage) {
+        return;
+    }
+
+    window.DrawingStorage.saveDrawing(drawingCanvas)
+        .catch(error => {
+            console.error(
+                "HandConnect: Drawing autosave failed:",
+                error
+            );
+        });
+}
+
+function removeSavedDrawing() {
+    if (!window.DrawingStorage) {
+        return;
+    }
+
+    window.DrawingStorage.clearDrawing()
+        .catch(error => {
+            console.error(
+                "HandConnect: Could not clear saved drawing:",
+                error
+            );
+        });
+}
+
+async function restoreSavedDrawing() {
+    if (!window.DrawingStorage) {
+        return false;
+    }
+
+    let imageUrl = null;
+
+    try {
+        const savedDrawing = await window.DrawingStorage.loadDrawing();
+
+        if (!savedDrawing) {
+            return false;
+        }
+
+        if (!(savedDrawing.image instanceof Blob)) {
+            console.warn("HandConnect: Saved drawing is invalid.");
+            await window.DrawingStorage.clearDrawing();
+            return false;
+        }
+
+        imageUrl = URL.createObjectURL(savedDrawing.image);
+
+        const image = new Image();
+        image.src = imageUrl;
+
+        await image.decode();
+
+        if (!image.naturalWidth || !image.naturalHeight) {
+            throw new Error("Saved drawing image is empty.");
+        }
+
+        drawingCtx.clearRect(
+            0,
+            0,
+            drawingCanvas.width,
+            drawingCanvas.height
+        );
+
+        drawingCtx.drawImage(
+            image,
+            0,
+            0,
+            drawingCanvas.width,
+            drawingCanvas.height
+        );
+
+        // A restored drawing starts with a fresh history.
+        undoStack = [];
+        redoStack = [];
+
+        currentStrokeSnapshot = null;
+        currentStrokeHasDrawn = false;
+
+        previousDrawPoint = null;
+        smoothedPoint = null;
+        shapeStartPoint = null;
+
+        updateHistoryButtons();
+
+        console.log("HandConnect: Previous drawing restored.");
+
+        return true;
+
+    } catch (error) {
+        console.error(
+            "HandConnect: Drawing restoration failed:",
+            error
+        );
+
+        // Remove a corrupted drawing instead of repeatedly
+        // attempting to restore it on every camera start.
+        try {
+            await window.DrawingStorage.clearDrawing();
+        } catch (clearError) {
+            console.error(
+                "HandConnect: Could not remove invalid saved drawing:",
+                clearError
+            );
+        }
+
+        return false;
+
+    } finally {
+        if (imageUrl) {
+            URL.revokeObjectURL(imageUrl);
+        }
+    }
+}
 
 // ==========================================
 // DRAWING TOOL SELECTION
@@ -145,6 +267,9 @@ function finishCurrentStroke() {
 
         // A new drawing action invalidates the redo history.
         redoStack = [];
+
+        // Save only after a drawing action is completed.
+        saveCurrentDrawing();
     }
 
     currentStrokeSnapshot = null;
@@ -175,6 +300,10 @@ function restoreCanvasSnapshot(snapshot) {
     shapeStartPoint = null;
 }
 
+// ==========================================
+// UNDO
+// ==========================================
+
 undoDrawing.addEventListener("click", () => {
     finishCurrentStroke();
 
@@ -189,7 +318,13 @@ undoDrawing.addEventListener("click", () => {
     restoreCanvasSnapshot(previousSnapshot);
 
     updateHistoryButtons();
+
+    saveCurrentDrawing();
 });
+
+// ==========================================
+// REDO
+// ==========================================
 
 redoDrawing.addEventListener("click", () => {
     finishCurrentStroke();
@@ -205,6 +340,8 @@ redoDrawing.addEventListener("click", () => {
     restoreCanvasSnapshot(nextSnapshot);
 
     updateHistoryButtons();
+
+    saveCurrentDrawing();
 });
 
 // ==========================================
@@ -623,6 +760,9 @@ clearDrawing.addEventListener("click", () => {
     shapeStartPoint = null;
 
     updateHistoryButtons();
+
+    // Remove the autosaved drawing as well.
+    removeSavedDrawing();
 });
 
 // ==========================================
@@ -667,6 +807,11 @@ function updateDashboard(res, count, gestureLabel) {
 // ==========================================
 
 function onResults(res) {
+    // Do not process camera frames while restoring a drawing.
+    if (isRestoringDrawing) {
+        return;
+    }
+
     ctx.clearRect(
         0,
         0,
@@ -750,13 +895,25 @@ async function startTracking() {
 
         resetGestureState();
 
-        await camera.start();
+        // Pause frame processing while the saved drawing is restored.
+        isRestoringDrawing = true;
 
-        resizeCanvas();
+        try {
+            await camera.start();
+
+            resizeCanvas();
+
+            await restoreSavedDrawing();
+
+        } finally {
+            isRestoringDrawing = false;
+        }
 
         return true;
 
     } catch (error) {
+        isRestoringDrawing = false;
+
         console.error("Hand tracking start error:", error);
 
         await stopTracking();
