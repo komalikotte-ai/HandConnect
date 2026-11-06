@@ -6,16 +6,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>HandConnect | Real-Time Hand Tracking</title>
-    <meta name="description" content="An interactive real-time hand tracking and air drawing application powered by MediaPipe.">
+
+    <meta
+        name="description"
+        content="An interactive real-time hand tracking and air drawing application powered by MediaPipe."
+    >
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet"
+    >
 
     <link rel="stylesheet" href="css/style.css">
-
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js"></script>
 </head>
 
 <body>
@@ -23,217 +28,282 @@
     <header class="topbar">
         <div class="brand">
             <div class="brand-icon">H</div>
-            <div class="brand-text">
+            <div>
                 <h1>HandConnect</h1>
-                <p>COMPUTER VISION WORKSPACE</p>
+                <p>Real-Time Hand Tracking Studio</p>
             </div>
         </div>
 
-        <div class="header-right">
-            <span class="product-label">LIVE HAND TRACKING</span>
-            <div class="status">
-                <span id="statusDot" class="status-dot"></span>
-                <span id="statusText">Camera Offline</span>
-            </div>
+        <div class="camera-status">
+            <span id="statusDot" class="status-dot"></span>
+            <span id="statusText">Camera Offline</span>
         </div>
     </header>
 
     <main class="workspace">
 
-        <section class="main-content">
+        <section class="camera-section">
 
-            <div class="page-heading">
+            <div class="section-heading">
                 <div>
-                    <span class="eyebrow">INTERACTIVE WORKSPACE</span>
-                    <h2>Hand Tracking Studio</h2>
-                    <p>Control your digital canvas using natural hand movements.</p>
+                    <h2>Live Hand Tracking</h2>
+                    <p>Control your drawing with hand gestures.</p>
                 </div>
-                <span class="powered-label">Powered by MediaPipe</span>
             </div>
 
-            <section class="camera-section">
+            <div class="camera-stage">
 
-                <div class="camera-header">
+                <video
+                    id="video"
+                    autoplay
+                    playsinline
+                    muted
+                ></video>
+
+                <canvas id="drawingCanvas"></canvas>
+
+                <canvas id="canvas"></canvas>
+
+                <div id="message" class="message">
+                    <div class="message-content">
+                        <span class="camera-icon">📷</span>
+                        <h3>Camera is not active</h3>
+                        <p>Click Start Camera to begin hand tracking.</p>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="drawing-panel">
+
+                <div class="section-heading">
                     <div>
-                        <h3>Camera Preview</h3>
-                        <p>Your live hand tracking workspace</p>
-                    </div>
-                    <span class="live-indicator">
-                        <span></span> LIVE PREVIEW
-                    </span>
-                </div>
-
-                <div class="camera-stage">
-
-                    <video id="video" autoplay playsinline muted></video>
-
-                    <canvas id="drawingCanvas"></canvas>
-                    <canvas id="canvas"></canvas>
-
-                    <div id="message" class="message">
-                        <div class="camera-symbol">
-                            <span>◎</span>
-                        </div>
-                        <h2>Ready to get started?</h2>
-                        <p>Start your camera to begin tracking your hand movements.</p>
-                    </div>
-
-                    <div class="camera-label">
-                        <span class="camera-label-dot"></span>
-                        CAMERA FEED
-                    </div>
-
-                </div>
-
-                <div class="drawing-panel">
-                    <div class="drawing-panel-heading">
-                        <div>
-                            <h3>Drawing Controls</h3>
-                            <p>Customize your air drawing brush</p>
-                        </div>
-                        <span class="tool-icon">✎</span>
-                    </div>
-
-                    <div class="drawing-tools">
-
-                        <div class="control-group color-control">
-                            <label for="brushColor">Brush color</label>
-                            <input type="color" id="brushColor" value="#2563eb">
-                        </div>
-
-                        <div class="control-group size-control">
-                            <label for="brushSize">
-                                Brush size
-                                <span id="brushSizeValue">6px</span>
-                            </label>
-                            <input type="range" id="brushSize" min="2" max="24" value="6">
-                        </div>
-
-                        <button id="undoDrawing" class="clear-btn" type="button" disabled>
-                            <span>↶</span> Undo
-                        </button>
-
-                        <button id="redoDrawing" class="clear-btn" type="button" disabled>
-                            <span>↷</span> Redo
-                        </button>
-
-                        <button id="clearDrawing" class="clear-btn" type="button">
-                            <span>⌫</span> Clear Canvas
-                        </button>
-
-                        <button id="exportDrawing" class="export-btn" type="button">
-                            <span>↓</span> Download PNG
-                        </button>
-
+                        <h2>Drawing Studio</h2>
+                        <p>Select a tool and draw using your index finger.</p>
                     </div>
                 </div>
 
-                <div class="camera-actions">
-                    <div class="action-description">
-                        <span class="action-icon">ⓘ</span>
-                        <span>Allow camera access when prompted.</span>
+                <div class="drawing-tools">
+
+                    <div class="control-group color-control">
+                        <label for="brushColor">Brush color</label>
+                        <input
+                            type="color"
+                            id="brushColor"
+                            value="#2563eb"
+                        >
                     </div>
 
-                    <div class="action-buttons">
-                        <button id="startBtn" class="primary-btn">
-                            <span>▶</span> Start Camera
-                        </button>
+                    <div class="control-group size-control">
+                        <label for="brushSize">
+                            Brush size
+                            <span id="brushSizeValue">6px</span>
+                        </label>
 
-                        <button id="stopBtn" class="secondary-btn" disabled>
-                            Stop Camera
-                        </button>
+                        <input
+                            type="range"
+                            id="brushSize"
+                            min="2"
+                            max="24"
+                            value="6"
+                        >
                     </div>
+
+                    <div class="tool-selector">
+                        <span class="tool-selector-label">Drawing tools</span>
+
+                        <div class="tool-buttons">
+
+                            <button
+                                type="button"
+                                class="tool-btn active"
+                                data-tool="brush"
+                                aria-pressed="true"
+                            >
+                                ✎ Brush
+                            </button>
+
+                            <button
+                                type="button"
+                                class="tool-btn"
+                                data-tool="eraser"
+                                aria-pressed="false"
+                            >
+                                ⌫ Eraser
+                            </button>
+
+                            <button
+                                type="button"
+                                class="tool-btn"
+                                data-tool="line"
+                                aria-pressed="false"
+                            >
+                                ／ Line
+                            </button>
+
+                            <button
+                                type="button"
+                                class="tool-btn"
+                                data-tool="rectangle"
+                                aria-pressed="false"
+                            >
+                                ▱ Rectangle
+                            </button>
+
+                            <button
+                                type="button"
+                                class="tool-btn"
+                                data-tool="circle"
+                                aria-pressed="false"
+                            >
+                                ◯ Circle
+                            </button>
+
+                        </div>
+                    </div>
+
+                    <button
+                        id="undoDrawing"
+                        class="clear-btn"
+                        type="button"
+                        disabled
+                    >
+                        <span>↶</span> Undo
+                    </button>
+
+                    <button
+                        id="redoDrawing"
+                        class="clear-btn"
+                        type="button"
+                        disabled
+                    >
+                        <span>↷</span> Redo
+                    </button>
+
+                    <button
+                        id="clearDrawing"
+                        class="clear-btn"
+                        type="button"
+                    >
+                        <span>⌫</span> Clear Canvas
+                    </button>
+
+                    <button
+                        id="exportDrawing"
+                        class="export-btn"
+                        type="button"
+                    >
+                        <span>↓</span> Download PNG
+                    </button>
+
                 </div>
 
-            </section>
+            </div>
+
+            <div class="camera-actions">
+
+                <button
+                    id="startBtn"
+                    class="primary-btn"
+                    type="button"
+                >
+                    <span>▶</span> Start Camera
+                </button>
+
+                <button
+                    id="stopBtn"
+                    class="secondary-btn"
+                    type="button"
+                    disabled
+                >
+                    Stop Camera
+                </button>
+
+            </div>
 
         </section>
 
-        <aside class="dashboard">
+        <section class="dashboard-section">
 
-            <div class="dashboard-heading">
-                <span class="eyebrow">ANALYTICS</span>
-                <h2>Tracking Overview</h2>
-                <p>Real-time detection statistics</p>
+            <div class="section-heading">
+                <div>
+                    <h2>Live Dashboard</h2>
+                    <p>Real-time hand tracking information.</p>
+                </div>
             </div>
 
             <div class="stats-grid">
 
                 <div class="stat-card">
-                    <div class="stat-top">
-                        <span class="stat-label">Hands Detected</span>
-                        <span class="stat-icon blue-icon">◎</span>
-                    </div>
+                    <span class="stat-label">Hands Detected</span>
                     <strong id="handCount">0</strong>
-                    <span class="stat-caption">Currently in frame</span>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-top">
-                        <span class="stat-label">Performance</span>
-                        <span class="stat-icon green-icon">↗</span>
-                    </div>
-                    <strong id="fps">0 <small>FPS</small></strong>
-                    <span class="stat-caption">Tracking frame rate</span>
+                    <span class="stat-label">FPS</span>
+                    <strong id="fps">0</strong>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-top">
-                        <span class="stat-label">Detected Gesture</span>
-                        <span class="stat-icon purple-icon">✋</span>
-                    </div>
-                    <strong id="gesture" class="gesture-value">-</strong>
-                    <span class="stat-caption">Recognized hand pose</span>
+                    <span class="stat-label">Current Gesture</span>
+                    <strong id="gesture">-</strong>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-top">
-                        <span class="stat-label">Finger Spread</span>
-                        <span class="stat-icon orange-icon">↔</span>
-                    </div>
-                    <strong id="spread">0%</strong>
-                    <span class="stat-caption">Finger distance indicator</span>
+                    <span class="stat-label">Finger Spread</span>
+                    <strong id="spread">-</strong>
                 </div>
 
             </div>
 
-            <div class="guide-card">
-                <div class="guide-heading">
-                    <span class="guide-icon">✦</span>
-                    <div>
-                        <h3>Quick Guide</h3>
-                        <p>How to use HandConnect</p>
-                    </div>
-                </div>
+        </section>
 
-                <ol class="guide-list">
-                    <li><span>01</span><p>Start your camera and show your hand.</p></li>
-                    <li><span>02</span><p>Raise your index finger to activate drawing.</p></li>
-                    <li><span>03</span><p>Move your finger to draw on the canvas.</p></li>
-                    <li><span>04</span><p>Fold your index finger to stop drawing.</p></li>
-                    <li><span>05</span><p>Customize your brush and manage your drawing history.</p></li>
-                </ol>
-            </div>
+        <section class="quick-guide">
 
-            <div class="technology-card">
-                <span class="technology-label">TECHNOLOGY</span>
-                <div class="technology-tags">
-                    <span>MediaPipe</span>
-                    <span>JavaScript</span>
-                    <span>Canvas API</span>
-                    <span>Computer Vision</span>
+            <div class="section-heading">
+                <div>
+                    <h2>How to Use</h2>
+                    <p>Follow these steps to use HandConnect.</p>
                 </div>
             </div>
 
-        </aside>
+            <div class="guide-grid">
+
+                <div class="guide-card">
+                    <h3>01. Start Camera</h3>
+                    <p>Allow camera permission and position your hand in view.</p>
+                </div>
+
+                <div class="guide-card">
+                    <h3>02. Select a Tool</h3>
+                    <p>Choose Brush, Eraser, Line, Rectangle or Circle.</p>
+                </div>
+
+                <div class="guide-card">
+                    <h3>03. Draw in the Air</h3>
+                    <p>Use the drawing gesture recognized by HandConnect.</p>
+                </div>
+
+                <div class="guide-card">
+                    <h3>04. Save Your Drawing</h3>
+                    <p>Use Undo, Redo, Clear Canvas or Download PNG.</p>
+                </div>
+
+            </div>
+
+        </section>
 
     </main>
 
     <footer class="footer">
-        <p>© 2026 HandConnect</p>
-        <p>Real-Time Hand Tracking & Air Drawing</p>
+        <p>HandConnect — Real-Time Hand Tracking and Air Drawing</p>
     </footer>
 
+    <!-- MediaPipe libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js"></script>
+
+    <!-- Application scripts -->
     <script src="js/gestures.js"></script>
     <script src="js/hand-tracking.js"></script>
     <script src="js/app.js"></script>

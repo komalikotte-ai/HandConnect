@@ -1,5 +1,12 @@
 
+"use strict";
+
+// ==========================================
+// DOM ELEMENTS
+// ==========================================
+
 const video = document.getElementById("video");
+
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
@@ -9,10 +16,21 @@ const drawingCtx = drawingCanvas.getContext("2d");
 const brushColor = document.getElementById("brushColor");
 const brushSize = document.getElementById("brushSize");
 const brushSizeValue = document.getElementById("brushSizeValue");
-const clearDrawing = document.getElementById("clearDrawing");
 
+const clearDrawing = document.getElementById("clearDrawing");
 const undoDrawing = document.getElementById("undoDrawing");
 const redoDrawing = document.getElementById("redoDrawing");
+
+const toolButtons = document.querySelectorAll(".tool-btn");
+
+const handCountElement = document.getElementById("handCount");
+const fpsElement = document.getElementById("fps");
+const gestureElement = document.getElementById("gesture");
+const spreadElement = document.getElementById("spread");
+
+// ==========================================
+// TRACKING VARIABLES
+// ==========================================
 
 let hands = null;
 let camera = null;
@@ -20,16 +38,17 @@ let isTracking = false;
 
 const SMOOTHING = 0.45;
 const MAX_JUMP_DISTANCE = 100;
+const MAX_HISTORY = 20;
 
 let smoothedPoint = null;
 let previousDrawPoint = null;
 let lastFrameTime = performance.now();
 
-// --------------------------------------------------
-// DRAWING HISTORY
-// --------------------------------------------------
+// ==========================================
+// DRAWING TOOL VARIABLES
+// ==========================================
 
-const MAX_HISTORY = 20;
+let selectedTool = "brush";
 
 let undoStack = [];
 let redoStack = [];
@@ -37,15 +56,58 @@ let redoStack = [];
 let currentStrokeSnapshot = null;
 let currentStrokeHasDrawn = false;
 
+let shapeStartPoint = null;
+
+// ==========================================
+// DRAWING TOOL SELECTION
+// ==========================================
+
+toolButtons.forEach(button => {
+    button.addEventListener("click", () => {
+        const newTool = button.dataset.tool;
+
+        const allowedTools = [
+            "brush",
+            "eraser",
+            "line",
+            "rectangle",
+            "circle"
+        ];
+
+        if (!allowedTools.includes(newTool)) {
+            return;
+        }
+
+        finishCurrentStroke();
+
+        selectedTool = newTool;
+
+        toolButtons.forEach(toolButton => {
+            const active = toolButton.dataset.tool === selectedTool;
+
+            toolButton.classList.toggle("active", active);
+            toolButton.setAttribute("aria-pressed", String(active));
+        });
+
+        previousDrawPoint = null;
+        smoothedPoint = null;
+        shapeStartPoint = null;
+    });
+});
+
+// ==========================================
+// CANVAS HISTORY
+// ==========================================
+
 function createCanvasSnapshot() {
     const snapshot = document.createElement("canvas");
 
     snapshot.width = drawingCanvas.width;
     snapshot.height = drawingCanvas.height;
 
-    const snapshotCtx = snapshot.getContext("2d");
+    const snapshotContext = snapshot.getContext("2d");
 
-    snapshotCtx.drawImage(drawingCanvas, 0, 0);
+    snapshotContext.drawImage(drawingCanvas, 0, 0);
 
     return snapshot;
 }
@@ -58,16 +120,21 @@ function updateHistoryButtons() {
 }
 
 function beginCurrentStroke() {
-    if (currentStrokeSnapshot) return;
+    if (currentStrokeSnapshot) {
+        return;
+    }
 
     currentStrokeSnapshot = createCanvasSnapshot();
     currentStrokeHasDrawn = false;
+    shapeStartPoint = null;
 
     updateHistoryButtons();
 }
 
 function finishCurrentStroke() {
-    if (!currentStrokeSnapshot) return;
+    if (!currentStrokeSnapshot) {
+        return;
+    }
 
     if (currentStrokeHasDrawn) {
         undoStack.push(currentStrokeSnapshot);
@@ -76,11 +143,13 @@ function finishCurrentStroke() {
             undoStack.shift();
         }
 
+        // A new drawing action invalidates the redo history.
         redoStack = [];
     }
 
     currentStrokeSnapshot = null;
     currentStrokeHasDrawn = false;
+    shapeStartPoint = null;
 
     updateHistoryButtons();
 }
@@ -103,14 +172,15 @@ function restoreCanvasSnapshot(snapshot) {
 
     previousDrawPoint = null;
     smoothedPoint = null;
+    shapeStartPoint = null;
 }
-
-// UNDO
 
 undoDrawing.addEventListener("click", () => {
     finishCurrentStroke();
 
-    if (undoStack.length === 0) return;
+    if (undoStack.length === 0) {
+        return;
+    }
 
     redoStack.push(createCanvasSnapshot());
 
@@ -121,12 +191,12 @@ undoDrawing.addEventListener("click", () => {
     updateHistoryButtons();
 });
 
-// REDO
-
 redoDrawing.addEventListener("click", () => {
     finishCurrentStroke();
 
-    if (redoStack.length === 0) return;
+    if (redoStack.length === 0) {
+        return;
+    }
 
     undoStack.push(createCanvasSnapshot());
 
@@ -137,9 +207,9 @@ redoDrawing.addEventListener("click", () => {
     updateHistoryButtons();
 });
 
-// --------------------------------------------------
+// ==========================================
 // CANVAS RESIZING
-// --------------------------------------------------
+// ==========================================
 
 function resizeCanvas() {
     const width =
@@ -163,11 +233,9 @@ function resizeCanvas() {
         savedDrawing.width = oldWidth;
         savedDrawing.height = oldHeight;
 
-        savedDrawing.getContext("2d").drawImage(
-            drawingCanvas,
-            0,
-            0
-        );
+        savedDrawing
+            .getContext("2d")
+            .drawImage(drawingCanvas, 0, 0);
     }
 
     canvas.width = width;
@@ -191,7 +259,6 @@ function resizeCanvas() {
     }
 
     // Old history snapshots may have different dimensions.
-    // Preserve the drawing but reset incompatible history.
     undoStack = [];
     redoStack = [];
 
@@ -200,26 +267,27 @@ function resizeCanvas() {
 
     previousDrawPoint = null;
     smoothedPoint = null;
+    shapeStartPoint = null;
 
     updateHistoryButtons();
 }
 
 window.addEventListener("resize", resizeCanvas);
 
-// --------------------------------------------------
+// ==========================================
 // COORDINATE CONVERSION
-// --------------------------------------------------
+// ==========================================
 
 function toPx(point) {
     return {
-        x: point.x * canvas.width,
-        y: point.y * canvas.height
+        x: point.x * drawingCanvas.width,
+        y: point.y * drawingCanvas.height
     };
 }
 
-// --------------------------------------------------
+// ==========================================
 // POINT SMOOTHING
-// --------------------------------------------------
+// ==========================================
 
 function smoothPoint(point) {
     if (!smoothedPoint) {
@@ -238,19 +306,21 @@ function smoothPoint(point) {
     }
 
     smoothedPoint = {
-        x: smoothedPoint.x +
+        x:
+            smoothedPoint.x +
             (point.x - smoothedPoint.x) * SMOOTHING,
 
-        y: smoothedPoint.y +
+        y:
+            smoothedPoint.y +
             (point.y - smoothedPoint.y) * SMOOTHING
     };
 
     return { ...smoothedPoint };
 }
 
-// --------------------------------------------------
-// HAND SKELETON
-// --------------------------------------------------
+// ==========================================
+// HAND SKELETON CONNECTIONS
+// ==========================================
 
 const BONES = [
     [0, 1], [1, 2], [2, 3], [3, 4],
@@ -269,35 +339,37 @@ function drawHandSkeleton(landmarks) {
     ctx.fillStyle = "#ffffff";
 
     BONES.forEach(([start, end]) => {
-        const a = toPx(landmarks[start]);
-        const b = toPx(landmarks[end]);
+        const pointA = toPx(landmarks[start]);
+        const pointB = toPx(landmarks[end]);
 
         ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
+        ctx.moveTo(pointA.x, pointA.y);
+        ctx.lineTo(pointB.x, pointB.y);
         ctx.stroke();
     });
 
     landmarks.forEach(point => {
-        const p = toPx(point);
+        const position = toPx(point);
 
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.arc(position.x, position.y, 4, 0, Math.PI * 2);
         ctx.fill();
     });
 
     ctx.restore();
 }
 
-// --------------------------------------------------
+// ==========================================
 // HAND CONNECTION EFFECT
-// --------------------------------------------------
+// ==========================================
 
 function drawHandConnections(allHands) {
-    if (allHands.length < 2) return;
+    if (allHands.length < 2) {
+        return;
+    }
 
-    const first = toPx(allHands[0][0]);
-    const second = toPx(allHands[1][0]);
+    const firstHand = toPx(allHands[0][0]);
+    const secondHand = toPx(allHands[1][0]);
 
     ctx.save();
 
@@ -305,19 +377,21 @@ function drawHandConnections(allHands) {
     ctx.lineWidth = 2;
 
     ctx.beginPath();
-    ctx.moveTo(first.x, first.y);
-    ctx.lineTo(second.x, second.y);
+    ctx.moveTo(firstHand.x, firstHand.y);
+    ctx.lineTo(secondHand.x, secondHand.y);
     ctx.stroke();
 
     ctx.restore();
 }
 
-// --------------------------------------------------
-// PARTICLE EFFECT
-// --------------------------------------------------
+// ==========================================
+// FINGERTIP PARTICLE EFFECT
+// ==========================================
 
 function drawSparks(landmarks) {
-    if (!landmarks || landmarks.length === 0) return;
+    if (!landmarks || landmarks.length === 0) {
+        return;
+    }
 
     const point = toPx(landmarks[8]);
 
@@ -334,11 +408,153 @@ function drawSparks(landmarks) {
     ctx.restore();
 }
 
-// --------------------------------------------------
+// ==========================================
+// DRAWING STYLE
+// ==========================================
+
+function applyDrawingStyle() {
+    drawingCtx.lineWidth = Number(brushSize.value);
+    drawingCtx.lineCap = "round";
+    drawingCtx.lineJoin = "round";
+
+    drawingCtx.strokeStyle = brushColor.value;
+
+    if (selectedTool === "eraser") {
+        drawingCtx.globalCompositeOperation = "destination-out";
+    } else {
+        drawingCtx.globalCompositeOperation = "source-over";
+    }
+}
+
+// ==========================================
+// BRUSH AND ERASER
+// ==========================================
+
+function drawFreehand(point) {
+    if (!previousDrawPoint) {
+        previousDrawPoint = { ...point };
+        return;
+    }
+
+    const distance = Math.hypot(
+        point.x - previousDrawPoint.x,
+        point.y - previousDrawPoint.y
+    );
+
+    if (distance > MAX_JUMP_DISTANCE) {
+        previousDrawPoint = { ...point };
+        return;
+    }
+
+    drawingCtx.save();
+
+    applyDrawingStyle();
+
+    drawingCtx.beginPath();
+
+    drawingCtx.moveTo(
+        previousDrawPoint.x,
+        previousDrawPoint.y
+    );
+
+    drawingCtx.lineTo(
+        point.x,
+        point.y
+    );
+
+    drawingCtx.stroke();
+
+    drawingCtx.restore();
+
+    currentStrokeHasDrawn = true;
+
+    previousDrawPoint = { ...point };
+
+    updateHistoryButtons();
+}
+
+// ==========================================
+// SHAPE PREVIEW
+// ==========================================
+
+function drawShapePreview(start, end) {
+    if (!currentStrokeSnapshot) {
+        return;
+    }
+
+    // Clear the previous preview and restore the original drawing.
+    drawingCtx.clearRect(
+        0,
+        0,
+        drawingCanvas.width,
+        drawingCanvas.height
+    );
+
+    drawingCtx.drawImage(
+        currentStrokeSnapshot,
+        0,
+        0
+    );
+
+    drawingCtx.save();
+
+    drawingCtx.globalCompositeOperation = "source-over";
+    drawingCtx.strokeStyle = brushColor.value;
+    drawingCtx.lineWidth = Number(brushSize.value);
+    drawingCtx.lineCap = "round";
+    drawingCtx.lineJoin = "round";
+
+    drawingCtx.beginPath();
+
+    if (selectedTool === "line") {
+        drawingCtx.moveTo(start.x, start.y);
+        drawingCtx.lineTo(end.x, end.y);
+    }
+
+    if (selectedTool === "rectangle") {
+        drawingCtx.rect(
+            start.x,
+            start.y,
+            end.x - start.x,
+            end.y - start.y
+        );
+    }
+
+    if (selectedTool === "circle") {
+        const radius = Math.hypot(
+            end.x - start.x,
+            end.y - start.y
+        );
+
+        drawingCtx.arc(
+            start.x,
+            start.y,
+            radius,
+            0,
+            Math.PI * 2
+        );
+    }
+
+    drawingCtx.stroke();
+    drawingCtx.restore();
+
+    const distance = Math.hypot(
+        end.x - start.x,
+        end.y - start.y
+    );
+
+    if (distance > 2) {
+        currentStrokeHasDrawn = true;
+        updateHistoryButtons();
+    }
+}
+
+// ==========================================
 // AIR DRAWING
-// --------------------------------------------------
+// ==========================================
 
 function drawInAir(landmarks, canDraw) {
+    // Finish the current drawing action when the gesture ends.
     if (!landmarks || !canDraw) {
         finishCurrentStroke();
 
@@ -353,78 +569,42 @@ function drawInAir(landmarks, canDraw) {
     const indexTip = toPx(landmarks[8]);
     const currentPoint = smoothPoint(indexTip);
 
-    drawingCtx.save();
-
-    drawingCtx.strokeStyle = brushColor.value;
-    drawingCtx.lineWidth = Number(brushSize.value);
-    drawingCtx.lineCap = "round";
-    drawingCtx.lineJoin = "round";
-
-    if (!previousDrawPoint) {
-        previousDrawPoint = { ...currentPoint };
-
-        drawingCtx.restore();
-
+    // Freehand tools.
+    if (
+        selectedTool === "brush" ||
+        selectedTool === "eraser"
+    ) {
+        drawFreehand(currentPoint);
         return;
     }
 
-    const distance = Math.hypot(
-        currentPoint.x - previousDrawPoint.x,
-        currentPoint.y - previousDrawPoint.y
-    );
-
-    if (distance > MAX_JUMP_DISTANCE) {
-        previousDrawPoint = { ...currentPoint };
-
-        drawingCtx.restore();
-
+    // Shape tools.
+    if (!shapeStartPoint) {
+        shapeStartPoint = { ...currentPoint };
         return;
     }
 
-    const middleX =
-        (previousDrawPoint.x + currentPoint.x) / 2;
-
-    const middleY =
-        (previousDrawPoint.y + currentPoint.y) / 2;
-
-    drawingCtx.beginPath();
-
-    drawingCtx.moveTo(
-        previousDrawPoint.x,
-        previousDrawPoint.y
+    drawShapePreview(
+        shapeStartPoint,
+        currentPoint
     );
-
-    drawingCtx.quadraticCurveTo(
-        previousDrawPoint.x,
-        previousDrawPoint.y,
-        middleX,
-        middleY
-    );
-
-    drawingCtx.stroke();
-
-    currentStrokeHasDrawn = true;
-
-    updateHistoryButtons();
-
-    previousDrawPoint = { ...currentPoint };
-
-    drawingCtx.restore();
 }
 
-// --------------------------------------------------
-// BRUSH CONTROLS
-// --------------------------------------------------
+// ==========================================
+// BRUSH SIZE CONTROL
+// ==========================================
 
 brushSize.addEventListener("input", () => {
-    brushSizeValue.textContent = brushSize.value;
+    brushSizeValue.textContent = brushSize.value + "px";
 });
 
-// --------------------------------------------------
+// ==========================================
 // CLEAR CANVAS
-// --------------------------------------------------
+// ==========================================
 
 clearDrawing.addEventListener("click", () => {
+    finishCurrentStroke();
+
     drawingCtx.clearRect(
         0,
         0,
@@ -440,17 +620,17 @@ clearDrawing.addEventListener("click", () => {
 
     previousDrawPoint = null;
     smoothedPoint = null;
+    shapeStartPoint = null;
 
     updateHistoryButtons();
 });
 
-// --------------------------------------------------
+// ==========================================
 // DASHBOARD
-// --------------------------------------------------
+// ==========================================
 
 function updateDashboard(res, count, gestureLabel) {
     const now = performance.now();
-
     const delta = now - lastFrameTime;
 
     const fps = delta > 0
@@ -459,34 +639,19 @@ function updateDashboard(res, count, gestureLabel) {
 
     lastFrameTime = now;
 
-    const handCountElement =
-        document.getElementById("handCount");
-
-    const fpsElement =
-        document.getElementById("fps");
-
-    const gestureElement =
-        document.getElementById("gesture");
-
-    const spreadElement =
-        document.getElementById("spread");
-
     handCountElement.textContent = count;
     fpsElement.textContent = fps;
-    gestureElement.textContent = gestureLabel;
+    gestureElement.textContent = gestureLabel || "-";
 
     if (count > 0 && res.multiHandLandmarks?.[0]) {
-        const lm = res.multiHandLandmarks[0];
-
-        const thumbTip = lm[4];
-        const pinkyTip = lm[20];
+        const landmarks = res.multiHandLandmarks[0];
 
         const spread = Math.min(
             100,
             Math.round(
                 Math.hypot(
-                    thumbTip.x - pinkyTip.x,
-                    thumbTip.y - pinkyTip.y
+                    landmarks[4].x - landmarks[20].x,
+                    landmarks[4].y - landmarks[20].y
                 ) * 250
             )
         );
@@ -497,9 +662,9 @@ function updateDashboard(res, count, gestureLabel) {
     }
 }
 
-// --------------------------------------------------
+// ==========================================
 // MEDIAPIPE RESULTS
-// --------------------------------------------------
+// ==========================================
 
 function onResults(res) {
     ctx.clearRect(
@@ -510,10 +675,6 @@ function onResults(res) {
     );
 
     const rawHands = res.multiHandLandmarks || [];
-
-    const detectedHands = rawHands.map(landmarks => {
-        return landmarks.map(point => toPx(point));
-    });
 
     const gestureState = updateGestureState(
         rawHands[0] || null
@@ -541,17 +702,19 @@ function onResults(res) {
 
     updateDashboard(
         res,
-        detectedHands.length,
+        rawHands.length,
         gestureState.gesture
     );
 }
 
-// --------------------------------------------------
-// START CAMERA AND HAND TRACKING
-// --------------------------------------------------
+// ==========================================
+// START CAMERA AND TRACKING
+// ==========================================
 
 async function startTracking() {
-    if (isTracking) return;
+    if (isTracking) {
+        return;
+    }
 
     try {
         resizeCanvas();
@@ -573,9 +736,12 @@ async function startTracking() {
         camera = new Camera(video, {
             onFrame: async () => {
                 if (hands && isTracking) {
-                    await hands.send({ image: video });
+                    await hands.send({
+                        image: video
+                    });
                 }
             },
+
             width: 640,
             height: 480
         });
@@ -591,7 +757,7 @@ async function startTracking() {
         return true;
 
     } catch (error) {
-        console.error("Hand tracking error:", error);
+        console.error("Hand tracking start error:", error);
 
         await stopTracking();
 
@@ -599,9 +765,9 @@ async function startTracking() {
     }
 }
 
-// --------------------------------------------------
-// STOP CAMERA AND HAND TRACKING
-// --------------------------------------------------
+// ==========================================
+// STOP CAMERA AND TRACKING
+// ==========================================
 
 async function stopTracking() {
     isTracking = false;
@@ -619,9 +785,9 @@ async function stopTracking() {
     }
 
     if (video.srcObject) {
-        video.srcObject.getTracks().forEach(track => {
-            track.stop();
-        });
+        video.srcObject
+            .getTracks()
+            .forEach(track => track.stop());
 
         video.srcObject = null;
     }
@@ -645,18 +811,29 @@ async function stopTracking() {
 
     previousDrawPoint = null;
     smoothedPoint = null;
+    shapeStartPoint = null;
 
     resetGestureState();
 
-    document.getElementById("handCount").textContent = "0";
-    document.getElementById("fps").textContent = "0";
-    document.getElementById("gesture").textContent = "-";
-    document.getElementById("spread").textContent = "-";
+    handCountElement.textContent = "0";
+    fpsElement.textContent = "0";
+    gestureElement.textContent = "-";
+    spreadElement.textContent = "-";
 
     lastFrameTime = performance.now();
 
     updateHistoryButtons();
 }
 
-// Initialize history button state.
+// ==========================================
+// INITIALIZATION
+// ==========================================
+
+toolButtons.forEach(button => {
+    const active = button.dataset.tool === selectedTool;
+
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+});
+
 updateHistoryButtons();
