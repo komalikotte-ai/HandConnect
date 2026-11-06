@@ -1162,3 +1162,30 @@ input:focus-visible {
         width: 100%;
     }
 }
+
+/* ==========================================
+   KEYBOARD SHORTCUT HINTS
+========================================== */
+
+.shortcut-key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 17px;
+    height: 17px;
+    margin-left: 4px;
+    padding: 0 4px;
+    border: 1px solid rgba(100, 116, 139, 0.35);
+    border-radius: 4px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.tool-btn.active .shortcut-key {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.45);
+    color: white;
+}
