@@ -1,53 +1,113 @@
 
+"use strict";
+
+// ==========================================
+// GESTURE CONFIGURATION
+// ==========================================
+
+const GESTURE_STABILITY_MS = 180;
+
+const PINCH_THRESHOLD = 0.045;
+const PINCH_RELEASE_THRESHOLD = 0.065;
+
+// ==========================================
+// GESTURE STATE
+// ==========================================
+
+let candidateGesture = null;
+let candidateSince = 0;
+let stableGesture = null;
+
+// ==========================================
+// FINGER DETECTION
+// ==========================================
+
 function fingerIsExtended(lm, tip, pip) {
-    return Math.hypot(
+    const wristDistance = Math.hypot(
         lm[tip].x - lm[0].x,
         lm[tip].y - lm[0].y
-    ) > Math.hypot(
+    );
+
+    const jointDistance = Math.hypot(
         lm[pip].x - lm[0].x,
         lm[pip].y - lm[0].y
     );
+
+    return wristDistance > jointDistance;
 }
 
-function isIndexFingerPointing(lm) {
-    const indexExtended = fingerIsExtended(lm, 8, 6);
-    const middleFolded = !fingerIsExtended(lm, 12, 10);
-    const ringFolded = !fingerIsExtended(lm, 16, 14);
-    const pinkyFolded = !fingerIsExtended(lm, 20, 18);
-
-    return (
-        indexExtended &&
-        middleFolded &&
-        ringFolded &&
-        pinkyFolded
-    );
-}
+// ==========================================
+// GESTURE CLASSIFICATION
+// ==========================================
 
 function detectGesture(lm) {
+    if (!lm || lm.length < 21) {
+        return null;
+    }
+
     const distance = (a, b) =>
         Math.hypot(
             lm[a].x - lm[b].x,
             lm[a].y - lm[b].y
         );
 
-    const openFingers = [8, 12, 16, 20].filter(
-        tip => fingerIsExtended(lm, tip, tip - 2)
-    ).length;
+    const thumbIndexDistance = distance(4, 8);
+    const thumbMiddleDistance = distance(4, 12);
 
-    if (distance(4, 8) < 0.05) return "Pinch";
-    if (openFingers >= 4) return "Open Hand";
-    if (openFingers === 0) return "Fist";
-    if (isIndexFingerPointing(lm)) return "Point";
+    // Undo: thumb and index finger pinch.
+    if (
+        thumbIndexDistance < PINCH_THRESHOLD &&
+        thumbMiddleDistance > PINCH_RELEASE_THRESHOLD
+    ) {
+        return "Undo";
+    }
+
+    // Redo: thumb and middle finger pinch.
+    if (
+        thumbMiddleDistance < PINCH_THRESHOLD &&
+        thumbIndexDistance > PINCH_RELEASE_THRESHOLD
+    ) {
+        return "Redo";
+    }
+
+    const indexExtended = fingerIsExtended(lm, 8, 6);
+    const middleExtended = fingerIsExtended(lm, 12, 10);
+    const ringExtended = fingerIsExtended(lm, 16, 14);
+    const pinkyExtended = fingerIsExtended(lm, 20, 18);
+
+    const extendedCount = [
+        indexExtended,
+        middleExtended,
+        ringExtended,
+        pinkyExtended
+    ].filter(Boolean).length;
+
+    // Open palm.
+    if (extendedCount === 4) {
+        return "Open Hand";
+    }
+
+    // Index finger pointing.
+    if (
+        indexExtended &&
+        !middleExtended &&
+        !ringExtended &&
+        !pinkyExtended
+    ) {
+        return "Point";
+    }
+
+    // Closed fist.
+    if (extendedCount === 0) {
+        return "Fist";
+    }
 
     return "Partial";
 }
 
-// Gesture stabilization
-const GESTURE_STABILITY_MS = 180;
-
-let candidateGesture = null;
-let candidateSince = 0;
-let stableGesture = null;
+// ==========================================
+// GESTURE STABILIZATION
+// ==========================================
 
 function resetGestureState() {
     candidateGesture = null;
@@ -73,7 +133,10 @@ function updateGestureState(lm, now = performance.now()) {
         candidateSince = now;
     }
 
-    if (now - candidateSince >= GESTURE_STABILITY_MS) {
+    if (
+        candidateGesture !== null &&
+        now - candidateSince >= GESTURE_STABILITY_MS
+    ) {
         stableGesture = candidateGesture;
     }
 
