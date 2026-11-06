@@ -1,3 +1,4 @@
+
 "use strict";
 
 // ==========================================
@@ -42,6 +43,19 @@ const MAX_HISTORY = 20;
 let smoothedPoint = null;
 let previousDrawPoint = null;
 let lastFrameTime = performance.now();
+
+// ==========================================
+// GESTURE COMMAND CONTROL
+// ==========================================
+
+const GESTURE_COMMAND_COOLDOWN_MS = 850;
+const FIST_CLEAR_HOLD_MS = 1200;
+
+let activeCommandGesture = null;
+let lastGestureCommandAt = 0;
+
+let fistStartedAt = null;
+let fistClearTriggered = false;
 
 // ==========================================
 // DRAWING TOOL VARIABLES
@@ -160,8 +174,7 @@ async function restoreSavedDrawing() {
             error
         );
 
-        // Remove a corrupted drawing instead of repeatedly
-        // attempting to restore it on every camera start.
+        // Remove corrupted data to avoid repeated restore failures.
         try {
             await window.DrawingStorage.clearDrawing();
         } catch (clearError) {
@@ -265,10 +278,10 @@ function finishCurrentStroke() {
             undoStack.shift();
         }
 
-        // A new drawing action invalidates the redo history.
+        // A new drawing action invalidates redo history.
         redoStack = [];
 
-        // Save only after a drawing action is completed.
+        // Save after a drawing action is completed.
         saveCurrentDrawing();
     }
 
@@ -304,11 +317,12 @@ function restoreCanvasSnapshot(snapshot) {
 // UNDO
 // ==========================================
 
-undoDrawing.addEventListener("click", () => {
+function undoCanvas() {
     finishCurrentStroke();
 
     if (undoStack.length === 0) {
-        return;
+        updateHistoryButtons();
+        return false;
     }
 
     redoStack.push(createCanvasSnapshot());
@@ -320,20 +334,29 @@ undoDrawing.addEventListener("click", () => {
     updateHistoryButtons();
 
     saveCurrentDrawing();
-});
+
+    return true;
+}
+
+undoDrawing.addEventListener("click", undoCanvas);
 
 // ==========================================
 // REDO
 // ==========================================
 
-redoDrawing.addEventListener("click", () => {
+function redoCanvas() {
     finishCurrentStroke();
 
     if (redoStack.length === 0) {
-        return;
+        updateHistoryButtons();
+        return false;
     }
 
     undoStack.push(createCanvasSnapshot());
+
+    if (undoStack.length > MAX_HISTORY) {
+        undoStack.shift();
+    }
 
     const nextSnapshot = redoStack.pop();
 
@@ -342,7 +365,11 @@ redoDrawing.addEventListener("click", () => {
     updateHistoryButtons();
 
     saveCurrentDrawing();
-});
+
+    return true;
+}
+
+redoDrawing.addEventListener("click", redoCanvas);
 
 // ==========================================
 // CANVAS RESIZING
@@ -395,7 +422,7 @@ function resizeCanvas() {
         );
     }
 
-    // Old history snapshots may have different dimensions.
+    // Old snapshots may have different dimensions.
     undoStack = [];
     redoStack = [];
 
@@ -619,7 +646,7 @@ function drawShapePreview(start, end) {
         return;
     }
 
-    // Clear the previous preview and restore the original drawing.
+    // Restore the original drawing before rendering the preview.
     drawingCtx.clearRect(
         0,
         0,
@@ -691,7 +718,6 @@ function drawShapePreview(start, end) {
 // ==========================================
 
 function drawInAir(landmarks, canDraw) {
-    // Finish the current drawing action when the gesture ends.
     if (!landmarks || !canDraw) {
         finishCurrentStroke();
 
@@ -706,7 +732,6 @@ function drawInAir(landmarks, canDraw) {
     const indexTip = toPx(landmarks[8]);
     const currentPoint = smoothPoint(indexTip);
 
-    // Freehand tools.
     if (
         selectedTool === "brush" ||
         selectedTool === "eraser"
@@ -715,7 +740,6 @@ function drawInAir(landmarks, canDraw) {
         return;
     }
 
-    // Shape tools.
     if (!shapeStartPoint) {
         shapeStartPoint = { ...currentPoint };
         return;
@@ -739,7 +763,7 @@ brushSize.addEventListener("input", () => {
 // CLEAR CANVAS
 // ==========================================
 
-clearDrawing.addEventListener("click", () => {
+function clearCanvas() {
     finishCurrentStroke();
 
     drawingCtx.clearRect(
@@ -761,9 +785,121 @@ clearDrawing.addEventListener("click", () => {
 
     updateHistoryButtons();
 
-    // Remove the autosaved drawing as well.
+    // Remove the persisted drawing as well.
     removeSavedDrawing();
-});
+
+    return true;
+}
+
+clearDrawing.addEventListener("click", clearCanvas);
+
+// ==========================================
+// GESTURE-BASED DRAWING COMMANDS
+// ==========================================
+
+function handleGestureCommands(gestureState) {
+    const gesture = gestureState?.gesture;
+    const now = performance.now();
+
+    // Reset command state when no stable gesture is available.
+    if (
+        !gesture ||
+        gesture === "-" ||
+        gesture === "Detecting..."
+    ) {
+        activeCommandGesture = null;
+        fistStartedAt = null;
+        fistClearTriggered = false;
+
+        return gesture || "-";
+    }
+
+    // ======================================
+    // FIST: HOLD TO CLEAR
+    // ======================================
+
+    if (gesture === "Fist") {
+        activeCommandGesture = "Fist";
+
+        if (fistStartedAt === null) {
+            fistStartedAt = now;
+            fistClearTriggered = false;
+        }
+
+        if (!fistClearTriggered) {
+            const holdDuration = now - fistStartedAt;
+
+            if (holdDuration >= FIST_CLEAR_HOLD_MS) {
+                const cooldownPassed =
+                    now - lastGestureCommandAt >=
+                    GESTURE_COMMAND_COOLDOWN_MS;
+
+                if (cooldownPassed) {
+                    clearCanvas();
+
+                    lastGestureCommandAt = now;
+                    fistClearTriggered = true;
+
+                    return "Cleared";
+                }
+            }
+
+            return "Fist (hold to clear)";
+        }
+
+        return "Fist";
+    }
+
+    // Leaving a fist resets the hold timer.
+    fistStartedAt = null;
+    fistClearTriggered = false;
+
+    // ======================================
+    // UNDO AND REDO
+    // ======================================
+
+    const isCommandGesture =
+        gesture === "Undo" ||
+        gesture === "Redo";
+
+    if (!isCommandGesture) {
+        activeCommandGesture = null;
+        return gesture;
+    }
+
+    // Execute only once while the same pinch is held.
+    if (activeCommandGesture === gesture) {
+        return gesture;
+    }
+
+    activeCommandGesture = gesture;
+
+    // Prevent rapid repeated commands.
+    if (
+        now - lastGestureCommandAt <
+        GESTURE_COMMAND_COOLDOWN_MS
+    ) {
+        return gesture + " (cooldown)";
+    }
+
+    let actionPerformed = false;
+
+    if (gesture === "Undo") {
+        actionPerformed = undoCanvas();
+    }
+
+    if (gesture === "Redo") {
+        actionPerformed = redoCanvas();
+    }
+
+    lastGestureCommandAt = now;
+
+    if (!actionPerformed) {
+        return gesture + " (unavailable)";
+    }
+
+    return gesture + " completed";
+}
 
 // ==========================================
 // DASHBOARD
@@ -807,7 +943,6 @@ function updateDashboard(res, count, gestureLabel) {
 // ==========================================
 
 function onResults(res) {
-    // Do not process camera frames while restoring a drawing.
     if (isRestoringDrawing) {
         return;
     }
@@ -823,6 +958,11 @@ function onResults(res) {
 
     const gestureState = updateGestureState(
         rawHands[0] || null
+    );
+
+    // Handle gesture commands before drawing.
+    const gestureLabel = handleGestureCommands(
+        gestureState
     );
 
     rawHands.forEach(landmarks => {
@@ -848,7 +988,7 @@ function onResults(res) {
     updateDashboard(
         res,
         rawHands.length,
-        gestureState.gesture
+        gestureLabel
     );
 }
 
@@ -895,7 +1035,10 @@ async function startTracking() {
 
         resetGestureState();
 
-        // Pause frame processing while the saved drawing is restored.
+        activeCommandGesture = null;
+        fistStartedAt = null;
+        fistClearTriggered = false;
+
         isRestoringDrawing = true;
 
         try {
@@ -971,6 +1114,10 @@ async function stopTracking() {
     shapeStartPoint = null;
 
     resetGestureState();
+
+    activeCommandGesture = null;
+    fistStartedAt = null;
+    fistClearTriggered = false;
 
     handCountElement.textContent = "0";
     fpsElement.textContent = "0";
