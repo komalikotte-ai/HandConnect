@@ -1,18 +1,114 @@
 
 const video = document.getElementById("video");
-
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
 const drawingCanvas = document.getElementById("drawingCanvas");
 const drawingCtx = drawingCanvas.getContext("2d");
 
-const brushColorInput = document.getElementById("brushColor");
-const brushSizeInput = document.getElementById("brushSize");
+const brushColor = document.getElementById("brushColor");
+const brushSize = document.getElementById("brushSize");
 const brushSizeValue = document.getElementById("brushSizeValue");
-const clearDrawingBtn = document.getElementById("clearDrawing");
+const clearDrawing = document.getElementById("clearDrawing");
 
-const TIPS = [4, 8, 12, 16, 20];
+let hands = null;
+let camera = null;
+let isTracking = false;
+
+const SMOOTHING = 0.45;
+const MAX_JUMP_DISTANCE = 100;
+
+let smoothedPoint = null;
+let previousDrawPoint = null;
+let lastFrameTime = performance.now();
+
+// --------------------------------------------------
+// CANVAS RESIZING
+// --------------------------------------------------
+
+function resizeCanvas() {
+    const width = video.clientWidth || 640;
+    const height = video.clientHeight || 480;
+
+    const oldWidth = drawingCanvas.width;
+    const oldHeight = drawingCanvas.height;
+
+    const image = document.createElement("canvas");
+    image.width = oldWidth;
+    image.height = oldHeight;
+
+    if (oldWidth && oldHeight) {
+        image.getContext("2d").drawImage(drawingCanvas, 0, 0);
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+
+    drawingCanvas.width = width;
+    drawingCanvas.height = height;
+
+    if (oldWidth && oldHeight) {
+        drawingCtx.drawImage(
+            image,
+            0,
+            0,
+            oldWidth,
+            oldHeight,
+            0,
+            0,
+            width,
+            height
+        );
+    }
+}
+
+window.addEventListener("resize", resizeCanvas);
+
+// --------------------------------------------------
+// COORDINATE CONVERSION
+// --------------------------------------------------
+
+function toPx(point) {
+    return {
+        x: point.x * canvas.width,
+        y: point.y * canvas.height
+    };
+}
+
+// --------------------------------------------------
+// POINT SMOOTHING
+// --------------------------------------------------
+
+function smoothPoint(point) {
+    if (!smoothedPoint) {
+        smoothedPoint = point;
+        return point;
+    }
+
+    const distance = Math.hypot(
+        point.x - smoothedPoint.x,
+        point.y - smoothedPoint.y
+    );
+
+    if (distance > MAX_JUMP_DISTANCE) {
+        smoothedPoint = point;
+        return point;
+    }
+
+    smoothedPoint = {
+        x: smoothedPoint.x +
+            (point.x - smoothedPoint.x) * SMOOTHING,
+
+        y: smoothedPoint.y +
+            (point.y - smoothedPoint.y) * SMOOTHING
+    };
+
+    return smoothedPoint;
+}
+
+// --------------------------------------------------
+// HAND SKELETON
+// --------------------------------------------------
 
 const BONES = [
     [0, 1], [1, 2], [2, 3], [3, 4],
@@ -23,435 +119,334 @@ const BONES = [
     [0, 17]
 ];
 
-const HAND_COLORS = ["#ff4fd8", "#ffe83a"];
+function drawHandSkeleton(landmarks) {
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#00e5ff";
+    ctx.fillStyle = "#ffffff";
 
-const BEAM_COLORS = [
-    "#ff3b3b", "#ff9a2e", "#7dff5a",
-    "#3ad7ff", "#c46bff"
-];
+    BONES.forEach(([start, end]) => {
+        const a = toPx(landmarks[start]);
+        const b = toPx(landmarks[end]);
 
-let camera = null;
-let tracker = null;
-let sparks = [];
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+    });
 
-let last = performance.now();
-let fpsSmooth = 0;
-let isRunning = false;
+    landmarks.forEach(point => {
+        const p = toPx(point);
 
-// Air drawing settings
-let brushColor = brushColorInput.value;
-let brushSize = Number(brushSizeInput.value);
-
-let previousDrawPoint = null;
-let smoothedDrawPoint = null;
-
-// Drawing improvement settings
-const SMOOTHING = 0.45;
-const MAX_JUMP_DISTANCE = 100;
-
-// Preserve drawing when browser window is resized
-function resizeCanvas() {
-    const oldWidth = drawingCanvas.width;
-    const oldHeight = drawingCanvas.height;
-
-    let savedDrawing = null;
-
-    if (oldWidth > 0 && oldHeight > 0) {
-        savedDrawing = document.createElement("canvas");
-        savedDrawing.width = oldWidth;
-        savedDrawing.height = oldHeight;
-
-        savedDrawing.getContext("2d").drawImage(
-            drawingCanvas, 0, 0
-        );
-    }
-
-    const width = canvas.clientWidth;
-    const height = canvas.clientHeight;
-
-    canvas.width = width;
-    canvas.height = height;
-
-    drawingCanvas.width = width;
-    drawingCanvas.height = height;
-
-    if (savedDrawing) {
-        drawingCtx.drawImage(
-            savedDrawing,
-            0, 0, oldWidth, oldHeight,
-            0, 0, width, height
-        );
-    }
-
-    previousDrawPoint = null;
-    smoothedDrawPoint = null;
-}
-
-window.addEventListener("resize", resizeCanvas);
-resizeCanvas();
-
-// Convert MediaPipe coordinates into canvas coordinates
-function toPx(p) {
-    const vw = video.videoWidth || 1280;
-    const vh = video.videoHeight || 720;
-
-    const s = Math.max(
-        canvas.width / vw,
-        canvas.height / vh
-    );
-
-    return {
-        x: p.x * vw * s - (vw * s - canvas.width) / 2,
-        y: p.y * vh * s - (vh * s - canvas.height) / 2
-    };
-}
-
-// Smooth fingertip movement
-function smoothPoint(currentPoint) {
-    if (!smoothedDrawPoint) {
-        smoothedDrawPoint = { ...currentPoint };
-        return smoothedDrawPoint;
-    }
-
-    smoothedDrawPoint = {
-        x: smoothedDrawPoint.x +
-            (currentPoint.x - smoothedDrawPoint.x) * SMOOTHING,
-
-        y: smoothedDrawPoint.y +
-            (currentPoint.y - smoothedDrawPoint.y) * SMOOTHING
-    };
-
-    return smoothedDrawPoint;
-}
-
-// Neon hand skeleton
-function glowLine(a, b, color, width) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = width;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 18;
-
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = width / 3;
-    ctx.shadowBlur = 0;
-    ctx.stroke();
-}
-
-// Spark effects
-function addSpark(p, color) {
-    sparks.push({
-        x: p.x,
-        y: p.y,
-        life: 1,
-        color,
-        vx: (Math.random() - 0.5) * 6,
-        vy: (Math.random() - 0.5) * 6
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fill();
     });
 }
 
-function drawSparks() {
-    sparks = sparks.filter(s => (s.life -= 0.04) > 0);
+// --------------------------------------------------
+// HAND CONNECTION EFFECT
+// --------------------------------------------------
 
-    for (const s of sparks) {
-        s.x += s.vx;
-        s.y += s.vy;
+function drawHandConnections(allHands) {
+    if (allHands.length < 2) return;
 
-        ctx.globalAlpha = s.life;
-        ctx.strokeStyle = s.color;
-        ctx.lineWidth = 2;
+    const first = toPx(allHands[0][0]);
+    const second = toPx(allHands[1][0]);
 
-        ctx.beginPath();
-        ctx.moveTo(s.x, s.y);
-        ctx.lineTo(s.x - s.vx * 2, s.y - s.vy * 2);
-        ctx.stroke();
-    }
-
-    ctx.globalAlpha = 1;
-}
-
-// Show a visible cursor at the index fingertip
-function drawDrawingCursor(point) {
     ctx.save();
 
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, 10, 0, Math.PI * 2);
-    ctx.strokeStyle = brushColor;
-    ctx.lineWidth = 3;
-    ctx.shadowColor = brushColor;
-    ctx.shadowBlur = 15;
-    ctx.stroke();
+    ctx.strokeStyle = "rgba(0, 229, 255, 0.7)";
+    ctx.lineWidth = 2;
 
     ctx.beginPath();
-    ctx.arc(point.x, point.y, 3, 0, Math.PI * 2);
-    ctx.fillStyle = "#ffffff";
+    ctx.moveTo(first.x, first.y);
+    ctx.lineTo(second.x, second.y);
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+// --------------------------------------------------
+// PARTICLE EFFECT
+// --------------------------------------------------
+
+function drawSparks(landmarks) {
+    if (!landmarks || landmarks.length === 0) return;
+
+    const point = toPx(landmarks[8]);
+
+    ctx.save();
+
+    ctx.fillStyle = "#00e5ff";
+    ctx.shadowColor = "#00e5ff";
+    ctx.shadowBlur = 15;
+
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.restore();
 }
 
-// Air drawing using the index fingertip
-function drawInAir(landmarks) {
-    const gesture = detectGesture(landmarks);
+// --------------------------------------------------
+// AIR DRAWING
+// Drawing is enabled only for a stable Point gesture.
+// --------------------------------------------------
 
-    // Stop drawing when the Point gesture is released
-    // Drawing is controlled independently of the dashboard gesture label.
-if (!isIndexFingerPointing(landmarks)) {
-    previousDrawPoint = null;
-    smoothedDrawPoint = null;
-    return null;
-}
-
-    // Landmark 8 is the index fingertip
-    const rawPoint = toPx(landmarks[8]);
-
-    // Smooth small tracking movements
-    const currentPoint = smoothPoint(rawPoint);
-
-    // Prevent sudden tracking jumps from creating long lines
-    if (previousDrawPoint) {
-        const distance = Math.hypot(
-            currentPoint.x - previousDrawPoint.x,
-            currentPoint.y - previousDrawPoint.y
-        );
-
-        if (distance > MAX_JUMP_DISTANCE) {
-            previousDrawPoint = currentPoint;
-            return currentPoint;
-        }
+function drawInAir(landmarks, canDraw) {
+    if (!landmarks || !canDraw) {
+        previousDrawPoint = null;
+        smoothedPoint = null;
+        return;
     }
 
+    const indexTip = toPx(landmarks[8]);
+    const currentPoint = smoothPoint(indexTip);
+
+    drawingCtx.strokeStyle = brushColor.value;
+    drawingCtx.lineWidth = Number(brushSize.value);
     drawingCtx.lineCap = "round";
     drawingCtx.lineJoin = "round";
-    drawingCtx.strokeStyle = brushColor;
-    drawingCtx.lineWidth = brushSize;
 
-    if (previousDrawPoint) {
-        const middlePoint = {
-            x: (previousDrawPoint.x + currentPoint.x) / 2,
-            y: (previousDrawPoint.y + currentPoint.y) / 2
-        };
-
-        // Quadratic curves make strokes look smoother
-        drawingCtx.beginPath();
-
-        drawingCtx.moveTo(
-            previousDrawPoint.x,
-            previousDrawPoint.y
-        );
-
-        drawingCtx.quadraticCurveTo(
-            previousDrawPoint.x,
-            previousDrawPoint.y,
-            middlePoint.x,
-            middlePoint.y
-        );
-
-        drawingCtx.stroke();
+    if (!previousDrawPoint) {
+        previousDrawPoint = currentPoint;
+        return;
     }
 
-    previousDrawPoint = currentPoint;
+    drawingCtx.beginPath();
 
-    return currentPoint;
+    drawingCtx.moveTo(
+        previousDrawPoint.x,
+        previousDrawPoint.y
+    );
+
+    const middleX =
+        (previousDrawPoint.x + currentPoint.x) / 2;
+
+    const middleY =
+        (previousDrawPoint.y + currentPoint.y) / 2;
+
+    drawingCtx.quadraticCurveTo(
+        previousDrawPoint.x,
+        previousDrawPoint.y,
+        middleX,
+        middleY
+    );
+
+    drawingCtx.stroke();
+
+    previousDrawPoint = currentPoint;
 }
 
-// Brush color control
-brushColorInput.addEventListener("input", () => {
-    brushColor = brushColorInput.value;
+// --------------------------------------------------
+// BRUSH CONTROLS
+// --------------------------------------------------
+
+brushSize.addEventListener("input", () => {
+    brushSizeValue.textContent = brushSize.value;
 });
 
-// Brush size control
-brushSizeInput.addEventListener("input", () => {
-    brushSize = Number(brushSizeInput.value);
-    brushSizeValue.textContent = brushSize + "px";
-});
-
-// Clear drawing button
-clearDrawingBtn.addEventListener("click", () => {
+clearDrawing.addEventListener("click", () => {
     drawingCtx.clearRect(
-        0, 0,
+        0,
+        0,
         drawingCanvas.width,
         drawingCanvas.height
     );
 
     previousDrawPoint = null;
-    smoothedDrawPoint = null;
+    smoothedPoint = null;
 });
 
-// Dashboard updates
-function updateDashboard(res, count) {
+// --------------------------------------------------
+// DASHBOARD
+// --------------------------------------------------
+
+function updateDashboard(res, count, gestureLabel) {
     const now = performance.now();
 
-    fpsSmooth = fpsSmooth * 0.9 +
-        (1000 / (now - last)) * 0.1;
+    const delta = now - lastFrameTime;
+    const fps = delta > 0 ? Math.round(1000 / delta) : 0;
 
-    last = now;
+    lastFrameTime = now;
 
-    document.getElementById("handCount").textContent = count;
+    const handCountElement =
+        document.getElementById("handCount");
 
-    document.getElementById("fps").innerHTML =
-        `${Math.round(fpsSmooth)} <small>FPS</small>`;
+    const fpsElement =
+        document.getElementById("fps");
 
-    const lm = res.multiHandLandmarks?.[0];
+    const gestureElement =
+        document.getElementById("gesture");
 
-    document.getElementById("gesture").textContent =
-        lm ? detectGesture(lm) : "-";
+    const spreadElement =
+        document.getElementById("spread");
 
-    let spread = 0;
+    handCountElement.textContent = count;
+    fpsElement.textContent = fps;
+    gestureElement.textContent = gestureLabel;
 
-    if (lm) {
-        const d = Math.hypot(
-            lm[4].x - lm[20].x,
-            lm[4].y - lm[20].y
+    if (count > 0 && res.multiHandLandmarks?.[0]) {
+        const lm = res.multiHandLandmarks[0];
+
+        const wrist = lm[0];
+        const indexTip = lm[8];
+
+        const spread = Math.round(
+            Math.hypot(
+                indexTip.x - wrist.x,
+                indexTip.y - wrist.y
+            ) * 100
         );
 
-        spread = Math.min(100, Math.round(d * 250));
+        spreadElement.textContent = spread + "%";
+    } else {
+        spreadElement.textContent = "-";
     }
-
-    document.getElementById("spread").textContent =
-        spread + "%";
 }
 
-// Process each MediaPipe result
-function onResults(res) {
-    if (!isRunning) return;
+// --------------------------------------------------
+// MEDIAPIPE RESULTS
+// --------------------------------------------------
 
+function onResults(res) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.lineCap = "round";
 
     const rawHands = res.multiHandLandmarks || [];
 
-    const hands = rawHands.map(lm => lm.map(toPx));
-
-    // Draw neon skeleton
-    hands.forEach((points, h) => {
-        for (const [a, b] of BONES) {
-            glowLine(
-                points[a],
-                points[b],
-                HAND_COLORS[h % 2],
-                4
-            );
-        }
+    const detectedHands = rawHands.map(landmarks => {
+        return landmarks.map(point => toPx(point));
     });
 
-    // Draw between two hands
-    if (hands.length === 2) {
-        TIPS.forEach((tip, i) => {
-            glowLine(
-                hands[0][tip],
-                hands[1][tip],
-                BEAM_COLORS[i],
-                6
-            );
+    // Get the stabilized gesture state.
+    const gestureState = updateGestureState(
+        rawHands[0] || null
+    );
 
-            if (Math.random() < 0.35) {
-                addSpark(hands[0][tip], BEAM_COLORS[i]);
-                addSpark(hands[1][tip], BEAM_COLORS[i]);
-            }
-        });
-    }
+    // Draw skeletons for detected hands.
+    rawHands.forEach(landmarks => {
+        drawHandSkeleton(landmarks);
+    });
 
-    // Air drawing uses the first detected hand
+    // Connect two hands when both are detected.
+    drawHandConnections(rawHands);
+
+    // Draw only when the Point gesture is stable.
     if (rawHands.length > 0) {
-        const cursorPoint = drawInAir(rawHands[0]);
+        drawInAir(
+            rawHands[0],
+            gestureState.canDraw
+        );
 
-        if (cursorPoint) {
-            drawDrawingCursor(cursorPoint);
-        }
+        drawSparks(rawHands[0]);
     } else {
         previousDrawPoint = null;
-        smoothedDrawPoint = null;
+        smoothedPoint = null;
     }
 
-    drawSparks();
-    updateDashboard(res, hands.length);
+    // Update dashboard with stabilized gesture.
+    updateDashboard(
+        res,
+        detectedHands.length,
+        gestureState.gesture
+    );
 }
 
-// Start camera and hand tracking
-async function startTracking() {
-    if (isRunning) return;
+// --------------------------------------------------
+// START CAMERA AND HAND TRACKING
+// --------------------------------------------------
 
-    isRunning = true;
+async function startTracking() {
+    if (isTracking) return;
 
     try {
-        tracker = new Hands({
-            locateFile: file =>
-                "https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/" + file
-        });
+        resizeCanvas();
 
-        tracker.setOptions({
+        hands = new Hands({
+    locateFile: file =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+});
+
+        hands.setOptions({
             maxNumHands: 2,
             modelComplexity: 1,
             minDetectionConfidence: 0.6,
             minTrackingConfidence: 0.5
         });
 
-        tracker.onResults(onResults);
+        hands.onResults(onResults);
 
         camera = new Camera(video, {
             onFrame: async () => {
-                if (isRunning) {
-                    await tracker.send({ image: video });
+                if (hands && isTracking) {
+                    await hands.send({ image: video });
                 }
             },
-            width: 1280,
-            height: 720
+            width: 640,
+            height: 480
         });
+
+        isTracking = true;
+
+        resetGestureState();
 
         await camera.start();
 
-        video.style.display = "block";
-        document.getElementById("message").style.display = "none";
-
-        previousDrawPoint = null;
-        smoothedDrawPoint = null;
-
-        return true;
-
     } catch (error) {
-        console.error("Camera error:", error);
+        console.error("Hand tracking error:", error);
+
         await stopTracking();
+
         throw error;
     }
 }
 
-// Stop camera and tracking
-async function stopTracking() {
-    isRunning = false;
+// --------------------------------------------------
+// STOP CAMERA AND HAND TRACKING
+// --------------------------------------------------
 
-    previousDrawPoint = null;
-    smoothedDrawPoint = null;
+async function stopTracking() {
+    isTracking = false;
 
     if (camera) {
+    try {
         camera.stop();
-        camera = null;
+    } catch (error) {
+        console.error("Camera stop error:", error);
     }
 
-    if (video.srcObject) {
-        video.srcObject.getTracks().forEach(track => track.stop());
-        video.srcObject = null;
+    camera = null;
+}
+
+if (video.srcObject) {
+    video.srcObject.getTracks().forEach(track => {
+        track.stop();
+    });
+
+    video.srcObject = null;
+}
+
+    if (hands) {
+        try {
+            await hands.close();
+        } catch (error) {
+            console.error("MediaPipe close error:", error);
+        }
+
+        hands = null;
     }
 
-    if (tracker) {
-        const oldTracker = tracker;
-        tracker = null;
-        await oldTracker.close();
-    }
+    video.srcObject = null;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    sparks = [];
 
-    video.style.display = "none";
+    previousDrawPoint = null;
+    smoothedPoint = null;
+
+    resetGestureState();
 
     document.getElementById("handCount").textContent = "0";
-    document.getElementById("fps").innerHTML = '0 <small>FPS</small>';
+    document.getElementById("fps").textContent = "0";
     document.getElementById("gesture").textContent = "-";
-    document.getElementById("spread").textContent = "0%";
-
-    document.getElementById("message").style.display = "flex";
+    document.getElementById("spread").textContent = "-";
 }

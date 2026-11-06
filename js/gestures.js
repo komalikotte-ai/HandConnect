@@ -1,7 +1,5 @@
 
 function fingerIsExtended(lm, tip, pip) {
-    // Compare fingertip and middle joint relative to the wrist.
-    // This is a simple heuristic for a roughly upright hand.
     return Math.hypot(
         lm[tip].x - lm[0].x,
         lm[tip].y - lm[0].y
@@ -13,7 +11,6 @@ function fingerIsExtended(lm, tip, pip) {
 
 function isIndexFingerPointing(lm) {
     const indexExtended = fingerIsExtended(lm, 8, 6);
-
     const middleFolded = !fingerIsExtended(lm, 12, 10);
     const ringFolded = !fingerIsExtended(lm, 16, 14);
     const pinkyFolded = !fingerIsExtended(lm, 20, 18);
@@ -43,4 +40,48 @@ function detectGesture(lm) {
     if (isIndexFingerPointing(lm)) return "Point";
 
     return "Partial";
+}
+
+// Gesture stabilization
+const GESTURE_STABILITY_MS = 180;
+
+let candidateGesture = null;
+let candidateSince = 0;
+let stableGesture = null;
+
+function resetGestureState() {
+    candidateGesture = null;
+    candidateSince = 0;
+    stableGesture = null;
+}
+
+function updateGestureState(lm, now = performance.now()) {
+    if (!lm) {
+        resetGestureState();
+
+        return {
+            gesture: "-",
+            rawGesture: null,
+            canDraw: false
+        };
+    }
+
+    const rawGesture = detectGesture(lm);
+
+    if (rawGesture !== candidateGesture) {
+        candidateGesture = rawGesture;
+        candidateSince = now;
+    }
+
+    if (now - candidateSince >= GESTURE_STABILITY_MS) {
+        stableGesture = candidateGesture;
+    }
+
+    const isStable = stableGesture === rawGesture;
+
+    return {
+        gesture: isStable ? stableGesture : "Detecting...",
+        rawGesture,
+        canDraw: isStable && stableGesture === "Point"
+    };
 }
