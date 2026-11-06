@@ -1,0 +1,10 @@
+{
+  "name": "handconnect",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real-time hand tracking and air drawing application",
+  "scripts": {
+    "test": "node --test",
+    "test:watch": "node --test --watch"
+  }
+}
