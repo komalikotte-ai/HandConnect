@@ -1093,3 +1093,72 @@ input:focus-visible {
         transition-duration: 0.01ms !important;
     }
 }
+
+/* ==========================================
+   PR #6 - DRAWING TOOL SELECTOR
+   ========================================== */
+
+.tool-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    width: 100%;
+}
+
+.tool-selector-label {
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--text-secondary);
+}
+
+.tool-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tool-btn {
+    padding: 9px 13px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 800;
+    transition: 0.2s ease;
+}
+
+.tool-btn:hover {
+    background: var(--primary-soft);
+    border-color: #d6dfff;
+    color: var(--primary);
+}
+
+.tool-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    box-shadow: 0 3px 9px rgba(66, 99, 235, 0.18);
+}
+
+.tool-btn:focus-visible {
+    outline: 3px solid rgba(66, 99, 235, 0.3);
+    outline-offset: 3px;
+}
+
+.tool-btn:disabled,
+.clear-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+@media (max-width: 450px) {
+    .tool-buttons {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .tool-btn {
+        width: 100%;
+    }
+}
