@@ -109,13 +109,21 @@
                             <input type="range" id="brushSize" min="2" max="24" value="6">
                         </div>
 
-                        <button id="clearDrawing" class="clear-btn" type="button">
-    <span>⌫</span> Clear Canvas
-</button>
+                        <button id="undoDrawing" class="clear-btn" type="button" disabled>
+                            <span>↶</span> Undo
+                        </button>
 
-<button id="exportDrawing" class="export-btn" type="button">
-    <span>↓</span> Download PNG
-</button>
+                        <button id="redoDrawing" class="clear-btn" type="button" disabled>
+                            <span>↷</span> Redo
+                        </button>
+
+                        <button id="clearDrawing" class="clear-btn" type="button">
+                            <span>⌫</span> Clear Canvas
+                        </button>
+
+                        <button id="exportDrawing" class="export-btn" type="button">
+                            <span>↓</span> Download PNG
+                        </button>
 
                     </div>
                 </div>
@@ -199,26 +207,11 @@
                 </div>
 
                 <ol class="guide-list">
-                    <li>
-                        <span>01</span>
-                        <p>Start your camera and show your hand.</p>
-                    </li>
-                    <li>
-                        <span>02</span>
-                        <p>Raise your index finger to activate drawing.</p>
-                    </li>
-                    <li>
-                        <span>03</span>
-                        <p>Move your finger to draw on the canvas.</p>
-                    </li>
-                    <li>
-                        <span>04</span>
-                        <p>Fold your index finger to stop drawing.</p>
-                    </li>
-                    <li>
-                        <span>05</span>
-                        <p>Customize your brush and clear your canvas.</p>
-                    </li>
+                    <li><span>01</span><p>Start your camera and show your hand.</p></li>
+                    <li><span>02</span><p>Raise your index finger to activate drawing.</p></li>
+                    <li><span>03</span><p>Move your finger to draw on the canvas.</p></li>
+                    <li><span>04</span><p>Fold your index finger to stop drawing.</p></li>
+                    <li><span>05</span><p>Customize your brush and manage your drawing history.</p></li>
                 </ol>
             </div>
 

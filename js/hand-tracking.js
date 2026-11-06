@@ -11,6 +11,9 @@ const brushSize = document.getElementById("brushSize");
 const brushSizeValue = document.getElementById("brushSizeValue");
 const clearDrawing = document.getElementById("clearDrawing");
 
+const undoDrawing = document.getElementById("undoDrawing");
+const redoDrawing = document.getElementById("redoDrawing");
+
 let hands = null;
 let camera = null;
 let isTracking = false;
@@ -21,6 +24,118 @@ const MAX_JUMP_DISTANCE = 100;
 let smoothedPoint = null;
 let previousDrawPoint = null;
 let lastFrameTime = performance.now();
+
+// --------------------------------------------------
+// DRAWING HISTORY
+// --------------------------------------------------
+
+const MAX_HISTORY = 20;
+
+let undoStack = [];
+let redoStack = [];
+
+let currentStrokeSnapshot = null;
+let currentStrokeHasDrawn = false;
+
+function createCanvasSnapshot() {
+    const snapshot = document.createElement("canvas");
+
+    snapshot.width = drawingCanvas.width;
+    snapshot.height = drawingCanvas.height;
+
+    const snapshotCtx = snapshot.getContext("2d");
+
+    snapshotCtx.drawImage(drawingCanvas, 0, 0);
+
+    return snapshot;
+}
+
+function updateHistoryButtons() {
+    undoDrawing.disabled =
+        undoStack.length === 0 && !currentStrokeHasDrawn;
+
+    redoDrawing.disabled = redoStack.length === 0;
+}
+
+function beginCurrentStroke() {
+    if (currentStrokeSnapshot) return;
+
+    currentStrokeSnapshot = createCanvasSnapshot();
+    currentStrokeHasDrawn = false;
+
+    updateHistoryButtons();
+}
+
+function finishCurrentStroke() {
+    if (!currentStrokeSnapshot) return;
+
+    if (currentStrokeHasDrawn) {
+        undoStack.push(currentStrokeSnapshot);
+
+        if (undoStack.length > MAX_HISTORY) {
+            undoStack.shift();
+        }
+
+        redoStack = [];
+    }
+
+    currentStrokeSnapshot = null;
+    currentStrokeHasDrawn = false;
+
+    updateHistoryButtons();
+}
+
+function restoreCanvasSnapshot(snapshot) {
+    drawingCtx.clearRect(
+        0,
+        0,
+        drawingCanvas.width,
+        drawingCanvas.height
+    );
+
+    drawingCtx.drawImage(
+        snapshot,
+        0,
+        0,
+        drawingCanvas.width,
+        drawingCanvas.height
+    );
+
+    previousDrawPoint = null;
+    smoothedPoint = null;
+}
+
+// UNDO
+
+undoDrawing.addEventListener("click", () => {
+    finishCurrentStroke();
+
+    if (undoStack.length === 0) return;
+
+    redoStack.push(createCanvasSnapshot());
+
+    const previousSnapshot = undoStack.pop();
+
+    restoreCanvasSnapshot(previousSnapshot);
+
+    updateHistoryButtons();
+});
+
+// REDO
+
+redoDrawing.addEventListener("click", () => {
+    finishCurrentStroke();
+
+    if (redoStack.length === 0) return;
+
+    undoStack.push(createCanvasSnapshot());
+
+    const nextSnapshot = redoStack.pop();
+
+    restoreCanvasSnapshot(nextSnapshot);
+
+    updateHistoryButtons();
+});
 
 // --------------------------------------------------
 // CANVAS RESIZING
@@ -40,11 +155,11 @@ function resizeCanvas() {
     const oldWidth = drawingCanvas.width;
     const oldHeight = drawingCanvas.height;
 
-    // Preserve the existing drawing.
     let savedDrawing = null;
 
     if (oldWidth > 0 && oldHeight > 0) {
         savedDrawing = document.createElement("canvas");
+
         savedDrawing.width = oldWidth;
         savedDrawing.height = oldHeight;
 
@@ -55,14 +170,12 @@ function resizeCanvas() {
         );
     }
 
-    // Resize both tracking and drawing canvases.
     canvas.width = width;
     canvas.height = height;
 
     drawingCanvas.width = width;
     drawingCanvas.height = height;
 
-    // Restore the previous drawing.
     if (savedDrawing) {
         drawingCtx.drawImage(
             savedDrawing,
@@ -77,9 +190,18 @@ function resizeCanvas() {
         );
     }
 
-    // Never connect a new stroke to an old coordinate.
+    // Old history snapshots may have different dimensions.
+    // Preserve the drawing but reset incompatible history.
+    undoStack = [];
+    redoStack = [];
+
+    currentStrokeSnapshot = null;
+    currentStrokeHasDrawn = false;
+
     previousDrawPoint = null;
     smoothedPoint = null;
+
+    updateHistoryButtons();
 }
 
 window.addEventListener("resize", resizeCanvas);
@@ -110,7 +232,6 @@ function smoothPoint(point) {
         point.y - smoothedPoint.y
     );
 
-    // Ignore sudden tracking jumps.
     if (distance > MAX_JUMP_DISTANCE) {
         smoothedPoint = { ...point };
         return { ...smoothedPoint };
@@ -124,8 +245,6 @@ function smoothPoint(point) {
             (point.y - smoothedPoint.y) * SMOOTHING
     };
 
-    // Return a copy so previousDrawPoint cannot be
-    // accidentally modified by the next smoothing update.
     return { ...smoothedPoint };
 }
 
@@ -217,15 +336,19 @@ function drawSparks(landmarks) {
 
 // --------------------------------------------------
 // AIR DRAWING
-// Drawing is enabled only for a stable Point gesture.
 // --------------------------------------------------
 
 function drawInAir(landmarks, canDraw) {
     if (!landmarks || !canDraw) {
+        finishCurrentStroke();
+
         previousDrawPoint = null;
         smoothedPoint = null;
+
         return;
     }
+
+    beginCurrentStroke();
 
     const indexTip = toPx(landmarks[8]);
     const currentPoint = smoothPoint(indexTip);
@@ -239,7 +362,9 @@ function drawInAir(landmarks, canDraw) {
 
     if (!previousDrawPoint) {
         previousDrawPoint = { ...currentPoint };
+
         drawingCtx.restore();
+
         return;
     }
 
@@ -248,10 +373,11 @@ function drawInAir(landmarks, canDraw) {
         currentPoint.y - previousDrawPoint.y
     );
 
-    // Avoid drawing long unwanted lines.
     if (distance > MAX_JUMP_DISTANCE) {
         previousDrawPoint = { ...currentPoint };
+
         drawingCtx.restore();
+
         return;
     }
 
@@ -277,6 +403,10 @@ function drawInAir(landmarks, canDraw) {
 
     drawingCtx.stroke();
 
+    currentStrokeHasDrawn = true;
+
+    updateHistoryButtons();
+
     previousDrawPoint = { ...currentPoint };
 
     drawingCtx.restore();
@@ -290,6 +420,10 @@ brushSize.addEventListener("input", () => {
     brushSizeValue.textContent = brushSize.value;
 });
 
+// --------------------------------------------------
+// CLEAR CANVAS
+// --------------------------------------------------
+
 clearDrawing.addEventListener("click", () => {
     drawingCtx.clearRect(
         0,
@@ -298,8 +432,16 @@ clearDrawing.addEventListener("click", () => {
         drawingCanvas.height
     );
 
+    undoStack = [];
+    redoStack = [];
+
+    currentStrokeSnapshot = null;
+    currentStrokeHasDrawn = false;
+
     previousDrawPoint = null;
     smoothedPoint = null;
+
+    updateHistoryButtons();
 });
 
 // --------------------------------------------------
@@ -310,6 +452,7 @@ function updateDashboard(res, count, gestureLabel) {
     const now = performance.now();
 
     const delta = now - lastFrameTime;
+
     const fps = delta > 0
         ? Math.round(1000 / delta)
         : 0;
@@ -372,20 +515,16 @@ function onResults(res) {
         return landmarks.map(point => toPx(point));
     });
 
-    // Get the stabilized gesture state.
     const gestureState = updateGestureState(
         rawHands[0] || null
     );
 
-    // Draw skeletons for detected hands.
     rawHands.forEach(landmarks => {
         drawHandSkeleton(landmarks);
     });
 
-    // Connect two hands when both are detected.
     drawHandConnections(rawHands);
 
-    // Draw only when the Point gesture is stable.
     if (rawHands.length > 0) {
         drawInAir(
             rawHands[0],
@@ -394,11 +533,12 @@ function onResults(res) {
 
         drawSparks(rawHands[0]);
     } else {
+        finishCurrentStroke();
+
         previousDrawPoint = null;
         smoothedPoint = null;
     }
 
-    // Update dashboard with stabilized gesture.
     updateDashboard(
         res,
         detectedHands.length,
@@ -446,7 +586,6 @@ async function startTracking() {
 
         await camera.start();
 
-        // Resize again after camera initialization.
         resizeCanvas();
 
         return true;
@@ -466,6 +605,8 @@ async function startTracking() {
 
 async function stopTracking() {
     isTracking = false;
+
+    finishCurrentStroke();
 
     if (camera) {
         try {
@@ -513,4 +654,9 @@ async function stopTracking() {
     document.getElementById("spread").textContent = "-";
 
     lastFrameTime = performance.now();
+
+    updateHistoryButtons();
 }
+
+// Initialize history button state.
+updateHistoryButtons();
