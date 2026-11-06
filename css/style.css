@@ -539,6 +539,44 @@ button {
     border-color: #d6dfff;
 }
 
+/* PNG EXPORT BUTTON */
+
+.export-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+
+    padding: 9px 13px;
+
+    background: var(--primary);
+    border: 1px solid var(--primary);
+    border-radius: 7px;
+
+    color: white;
+    font-size: 10px;
+    font-weight: 800;
+
+    transition: 0.2s ease;
+}
+
+.export-btn:hover {
+    background: var(--primary-dark);
+    border-color: var(--primary-dark);
+    box-shadow: 0 4px 12px rgba(66, 99, 235, 0.2);
+}
+
+.export-btn:focus-visible {
+    outline: 3px solid rgba(66, 99, 235, 0.3);
+    outline-offset: 3px;
+}
+
+@media (max-width: 450px) {
+    .export-btn {
+        width: 100%;
+    }
+}
+
 
 /* 8. CAMERA ACTIONS */
 
